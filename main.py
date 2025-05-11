@@ -76,7 +76,6 @@ def main():
 
     # ✅ 모델 구성
     visual_encoder = PositionalEncoding(
-        pretrained_path="weights/Video_only_model.pt",
         hidden_dim=256, lstm_layers=2, bidirectional=True
     )
     audio_encoder = RivaConformerAudioEncoder(freeze=False)
