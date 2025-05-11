@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 import nemo.collections.asr as nemo_asr
+from nemo.collections.asr.models import EncDecCTCModel
 import math
 
 class PositionalEncoding(nn.Module):
@@ -52,25 +53,17 @@ class VisualEncoder(nn.Module):
 
 
 class RivaConformerAudioEncoder(nn.Module):
-    def __init__(self, input_dim=80, output_dim=512, hidden_dim=512, num_layers=4, freeze=False):
+    def __init__(self, pretrained_name='stt_ko_conformer_ctc_large', freeze=True):
         super().__init__()
-        self.input_proj = nn.Linear(input_dim, hidden_dim)
-        self.positional_encoding = PositionalEncoding(d_model=hidden_dim)
-
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim, nhead=8, dim_feedforward=2048, batch_first=True
-        )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-        self.output_proj = nn.Linear(hidden_dim, output_dim)
-        self.output_dim = output_dim
-
+        self.model = EncDecCTCModel.from_pretrained(model_name=pretrained_name)
         if freeze:
-            for param in self.parameters():
-                param.requires_grad = False
+            self.model.freeze()
+        self.output_dim = self.model.encoder._feat_out  # Extracted feature dim
 
-    def forward(self, x):
-        x = self.input_proj(x)
-        x = self.positional_encoding(x)
-        x = self.encoder(x)
-        x = self.output_proj(x)
-        return x
+    def forward(self, x, lengths=None):
+        # Expecting [B, T, F] log-mel spectrogram input
+        # lengths is required for masking in some NeMo models
+        if lengths is None:
+            lengths = torch.full((x.size(0),), x.size(1), dtype=torch.long, device=x.device)
+        features = self.model.encoder(x, lengths=lengths)
+        return features
