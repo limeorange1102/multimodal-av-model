@@ -19,13 +19,33 @@ def set_seed(seed=42):
     random.seed(seed)
 
 def generate_fixed_pairs(sentence_list, n_pairs=1000):
-    # validation용 고정 쌍 만들기
     pairs = []
     indices = list(range(len(sentence_list)))
     for _ in range(n_pairs):
         i, j = random.sample(indices, 2)
         pairs.append((sentence_list[i], sentence_list[j]))
     return pairs
+
+# ✅ 체크포인트 저장
+def save_checkpoint(epoch, trainer, path):
+    torch.save({
+        'epoch': epoch,
+        'visual_encoder': trainer.visual_encoder.state_dict(),
+        'audio_encoder': trainer.audio_encoder.state_dict(),
+        'fusion': trainer.fusion_module.state_dict(),
+        'decoder': trainer.decoder.state_dict(),
+        'optimizer': trainer.optimizer.state_dict(),
+    }, path)
+
+# ✅ 체크포인트 불러오기
+def load_checkpoint(trainer, path):
+    checkpoint = torch.load(path, map_location=trainer.device)
+    trainer.visual_encoder.load_state_dict(checkpoint['visual_encoder'])
+    trainer.audio_encoder.load_state_dict(checkpoint['audio_encoder'])
+    trainer.fusion_module.load_state_dict(checkpoint['fusion'])
+    trainer.decoder.load_state_dict(checkpoint['decoder'])
+    trainer.optimizer.load_state_dict(checkpoint['optimizer'])
+    return checkpoint['epoch'] + 1  # 다음 epoch부터 시작
 
 def main():
     set_seed()
@@ -36,24 +56,18 @@ def main():
     text_dir = "processed_dataset/text"
     wav_dir = "input_videos"
 
-    # ✅ tokenizer
     tokenizer = Tokenizer(vocab_path="utils/tokenizer800.vocab")
-
-    # ✅ 전체 문장 리스트 생성
     sentence_list = build_data_list(json_folder, npy_dir, text_dir, wav_dir)
-
-    # ✅ train / val 분할
     train_sent, val_sent = train_test_split(sentence_list, test_size=0.1, random_state=42)
     val_pairs = generate_fixed_pairs(val_sent, n_pairs=500)
 
-    # ✅ Dataset & Loader
     train_dataset = RandomSentencePairDataset(train_sent, tokenizer, num_pairs_per_epoch=10000)
     val_dataset = FixedSentencePairDataset(val_pairs, tokenizer)
 
     train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, num_workers=4, collate_fn=collate_fn)
     val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=4, collate_fn=collate_fn)
 
-    # ✅ 모델
+    # ✅ 모델 구성
     visual_encoder = VisualEncoder(
         pretrained_path="weights/Video_only_model.pt",
         hidden_dim=256, lstm_layers=2, bidirectional=True
@@ -73,19 +87,37 @@ def main():
         device="cuda" if torch.cuda.is_available() else "cpu"
     )
 
-    # ✅ 학습
+    # ✅ 체크포인트 폴더 및 경로
     os.makedirs("checkpoints", exist_ok=True)
-    for epoch in range(1, 21):
-        print(f"\n📚 Epoch {epoch}/20")
-        trainer.train_epoch(train_loader)
-        trainer.evaluate(val_loader)
+    last_ckpt_path = "checkpoints/last_checkpoint.pt"
+    best_ckpt_path = "checkpoints/best_checkpoint.pt"
+    start_epoch = 1
+    best_wer = 1.0  # 낮을수록 좋음
 
-        torch.save({
-            'visual_encoder': visual_encoder.state_dict(),
-            'audio_encoder': audio_encoder.state_dict(),
-            'fusion': fusion.state_dict(),
-            'decoder': decoder.state_dict(),
-        }, f"checkpoints/epoch_{epoch}.pt")
+    # ✅ 기존 체크포인트가 있으면 이어서 시작
+    if os.path.exists(last_ckpt_path):
+        print("🔁 기존 체크포인트 불러오는 중...")
+        start_epoch = load_checkpoint(trainer, last_ckpt_path)
+        print(f"➡️  Epoch {start_epoch}부터 재개")
+
+    # ✅ 학습 루프
+    for epoch in range(start_epoch, 21):
+        print(f"\n📚 Epoch {epoch}/20")
+        loss = trainer.train_epoch(train_loader)
+        print(f"✅ Training Loss: {loss:.4f}")
+
+        wer_score = trainer.evaluate(val_loader)
+        print(f"🎯 Validation WER: {wer_score:.4f}")
+
+        # 💾 마지막 상태 저장
+        save_checkpoint(epoch, trainer, last_ckpt_path)
+        print("💾 마지막 체크포인트 저장 완료")
+
+        # 🏅 Best 성능 모델 따로 저장
+        if wer_score < best_wer:
+            best_wer = wer_score
+            save_checkpoint(epoch, trainer, best_ckpt_path)
+            print("🏅 Best 모델 갱신 및 저장 완료")
 
 if __name__ == "__main__":
     main()
