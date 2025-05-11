@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 
 from dataset.multi_speaker_dataset import RandomSentencePairDataset, FixedSentencePairDataset
 from dataset.collate_fn import collate_fn
-from model.encoder import PositionalEncoding, RivaConformerAudioEncoder
+from model.encoder import VisualEncoder, RivaConformerAudioEncoder
 from model.fusion_module import CrossAttentionFusion
 from model.decoder import CTCDecoder
 from model.trainer import MultimodalTrainer
@@ -33,7 +33,6 @@ def generate_fixed_pairs(sentence_list, n_pairs=1000):
         pairs.append((sentence_list[i], sentence_list[j]))
     return pairs
 
-# ✅ 체크포인트 저장
 def save_checkpoint(epoch, trainer, path):
     torch.save({
         'epoch': epoch,
@@ -44,7 +43,6 @@ def save_checkpoint(epoch, trainer, path):
         'optimizer': trainer.optimizer.state_dict(),
     }, path)
 
-# ✅ 체크포인트 불러오기
 def load_checkpoint(trainer, path):
     checkpoint = torch.load(path, map_location=trainer.device)
     trainer.visual_encoder.load_state_dict(checkpoint['visual_encoder'])
@@ -52,12 +50,11 @@ def load_checkpoint(trainer, path):
     trainer.fusion_module.load_state_dict(checkpoint['fusion'])
     trainer.decoder.load_state_dict(checkpoint['decoder'])
     trainer.optimizer.load_state_dict(checkpoint['optimizer'])
-    return checkpoint['epoch'] + 1  # 다음 epoch부터 시작
+    return checkpoint['epoch'] + 1
 
 def main():
     set_seed()
 
-    # ✅ 경로 설정
     json_folder = "input_texts"
     npy_dir = "processed_dataset/npy"
     text_dir = "processed_dataset/text"
@@ -74,15 +71,26 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, num_workers=4, collate_fn=collate_fn)
     val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=4, collate_fn=collate_fn)
 
-    # ✅ 모델 구성
-    visual_encoder = PositionalEncoding(d_model = 256)
+    visual_encoder = VisualEncoder(
+        pretrained_path="weights/Video_only_model.pt",
+        hidden_dim=256,
+        lstm_layers=2,
+        bidirectional=True
+    )
+
     audio_encoder = RivaConformerAudioEncoder(freeze=False)
+
     fusion = CrossAttentionFusion(
         visual_dim=visual_encoder.output_dim,
         audio_dim=audio_encoder.output_dim,
         fused_dim=512
     )
-    decoder = CTCDecoder(input_dim=512, vocab_size=tokenizer.vocab_size, blank_id=tokenizer.blank_id)
+
+    decoder = CTCDecoder(
+        input_dim=512,
+        vocab_size=tokenizer.vocab_size,
+        blank_id=tokenizer.blank_id
+    )
 
     trainer = MultimodalTrainer(
         visual_encoder, audio_encoder, fusion, decoder,
@@ -91,31 +99,26 @@ def main():
         device="cuda" if torch.cuda.is_available() else "cpu"
     )
 
-    # ✅ 체크포인트 폴더 및 경로
     os.makedirs("checkpoints", exist_ok=True)
     last_ckpt_path = "checkpoints/last_checkpoint.pt"
     best_ckpt_path = "checkpoints/best_checkpoint.pt"
     start_epoch = 1
-    best_wer = 1.0  # 낮을수록 좋음
+    best_wer = 1.0
 
-    # ✅ 기존 체크포인트가 있으면 이어서 시작
     if os.path.exists(last_ckpt_path):
         logging.info("🔁 기존 체크포인트 불러오는 중...")
         start_epoch = load_checkpoint(trainer, last_ckpt_path)
         logging.info(f"➡️  Epoch {start_epoch}부터 재개")
 
-    # ✅ 학습 루프
     for epoch in range(start_epoch, 21):
         logging.info(f"\n📚 Epoch {epoch}/20")
         loss = trainer.train_epoch(train_loader)
 
         wer_score = trainer.evaluate(val_loader)
 
-        # 💾 마지막 상태 저장
         save_checkpoint(epoch, trainer, last_ckpt_path)
         logging.info("💾 마지막 체크포인트 저장 완료")
 
-        # 🏅 Best 성능 모델 따로 저장
         if wer_score < best_wer:
             best_wer = wer_score
             save_checkpoint(epoch, trainer, best_ckpt_path)
