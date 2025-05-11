@@ -1,0 +1,7 @@
+input_videos/
+weights/
+*.zip
+*.pt
+*.pth
+*.ckpt
+__pycache__/
