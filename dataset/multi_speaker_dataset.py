@@ -29,9 +29,9 @@ class BaseSentencePairDataset(Dataset):
 
         # 텍스트 로딩 및 토크나이징
         with open(s1["text_path"], 'r', encoding='utf-8') as f:
-            label1 = tokenizer(f.read().strip())
+            label1 = tokenizer.encode(f.read().strip()) 
         with open(s2["text_path"], 'r', encoding='utf-8') as f:
-            label2 = tokenizer(f.read().strip())
+            label2 = tokenizer.encode(f.read().strip())
         label1 = torch.tensor(label1, dtype=torch.long)
         label2 = torch.tensor(label2, dtype=torch.long)
 
