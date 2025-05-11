@@ -75,9 +75,7 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=4, collate_fn=collate_fn)
 
     # ✅ 모델 구성
-    visual_encoder = PositionalEncoding(
-        hidden_dim=256, lstm_layers=2, bidirectional=True
-    )
+    visual_encoder = PositionalEncoding(d_model = 256)
     audio_encoder = RivaConformerAudioEncoder(freeze=False)
     fusion = CrossAttentionFusion(
         visual_dim=visual_encoder.output_dim,
