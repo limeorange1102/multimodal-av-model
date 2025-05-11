@@ -2,46 +2,46 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class FusionModule(nn.Module):
-    def __init__(self, visual_dim, audio_dim, fused_dim=512):
-        super(FusionModule, self).__init__()
 
-        # 입력 feature를 같은 차원으로 projection
+class CrossAttentionFusion(nn.Module):
+    def __init__(self, visual_dim, audio_dim, fused_dim, num_heads=4):
+        super().__init__()
+
+        # Step 1: 두 modality를 동일한 차원으로 projection
         self.visual_proj = nn.Linear(visual_dim, fused_dim)
         self.audio_proj = nn.Linear(audio_dim, fused_dim)
 
-        # Gating score 계산 (Late Fusion-like)
-        self.visual_gate = nn.Linear(visual_dim, 1)
-        self.audio_gate = nn.Linear(audio_dim, 1)
+        # Step 2: 서로 교차로 attention
+        self.cross_attn_visual = nn.MultiheadAttention(embed_dim=fused_dim, num_heads=num_heads, batch_first=True)
+        self.cross_attn_audio = nn.MultiheadAttention(embed_dim=fused_dim, num_heads=num_heads, batch_first=True)
 
-        # 후처리 layer
-        self.post_fusion = nn.Sequential(
-            nn.Linear(fused_dim, fused_dim),
-            nn.ReLU(),
-            nn.LayerNorm(fused_dim)
-        )
+        # Step 3: concat된 결과를 하나의 fused vector로 projection
+        self.fusion_proj = nn.Linear(fused_dim * 2, fused_dim)
 
     def forward(self, visual_feat, audio_feat):
         """
-        visual_feat: [B, T, D_v]
-        audio_feat:  [B, T, D_a]
-        Returns:
-            fused: [B, T, fused_dim]
+        visual_feat: [B, T_v, D_v]
+        audio_feat:  [B, T_a, D_a]
+        Returns: fused_feat [B, T, fused_dim]
         """
-        # 차원 맞추기
-        visual_proj = self.visual_proj(visual_feat)  # [B, T, fused_dim]
-        audio_proj = self.audio_proj(audio_feat)     # [B, T, fused_dim]
+        # Step 0: 시간축 보정 (보통 visual 기준으로 맞춤)
+        T_v = visual_feat.size(1)
+        T_a = audio_feat.size(1)
 
-        # gating score 계산
-        visual_score = torch.sigmoid(self.visual_gate(visual_feat))  # [B, T, 1]
-        audio_score  = torch.sigmoid(self.audio_gate(audio_feat))    # [B, T, 1]
+        if T_v != T_a:
+            audio_feat = F.interpolate(audio_feat.permute(0, 2, 1), size=T_v, mode='linear', align_corners=True)
+            audio_feat = audio_feat.permute(0, 2, 1)
 
-        # normalize (두 score 합이 1이 되도록)
-        sum_score = visual_score + audio_score + 1e-6
-        visual_weight = visual_score / sum_score
-        audio_weight  = audio_score / sum_score
+        # Step 1: 각 modality projection
+        v = self.visual_proj(visual_feat)  # [B, T, D]
+        a = self.audio_proj(audio_feat)    # [B, T, D]
 
-        # weighted sum
-        fused = visual_weight * visual_proj + audio_weight * audio_proj  # [B, T, fused_dim]
+        # Step 2: 서로에게 cross attention
+        v2a, _ = self.cross_attn_visual(query=v, key=a, value=a)  # visual이 audio attend
+        a2v, _ = self.cross_attn_audio(query=a, key=v, value=v)   # audio가 visual attend
 
-        return self.post_fusion(fused)  # [B, T, fused_dim]
+        # Step 3: concat 후 projection
+        fused = torch.cat([v2a, a2v], dim=-1)      # [B, T, 2D]
+        fused = self.fusion_proj(fused)            # [B, T, D]
+
+        return fused
