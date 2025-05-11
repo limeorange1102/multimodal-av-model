@@ -27,15 +27,15 @@ class MultimodalTrainer:
         self.decoder.train()
 
         visual = batch["lip1"].to(self.device)
-        audio = batch["audio"].to(self.device)  # [B, T, 80]
+        audio = batch["audio"].to(self.device)
         target = batch["text1"].to(self.device)
         v_len = batch["lip1_lengths"].to(self.device)
         a_len = batch["audio_lengths"].to(self.device)
         t_len = batch["text1_lengths"].to(self.device)
 
-        visual_feat = self.visual_encoder(visual)         # [B, T, D_v]
-        audio_feat = self.audio_encoder(audio)            # [B, T, D_a]
-        fused_feat = self.fusion_module(visual_feat, audio_feat)  # [B, T, D_fused]
+        visual_feat = self.visual_encoder(visual)
+        audio_feat = self.audio_encoder(audio)
+        fused_feat = self.fusion_module(visual_feat, audio_feat)
 
         loss = self.decoder(fused_feat, target, input_lengths=v_len, target_lengths=t_len)
 
@@ -43,6 +43,18 @@ class MultimodalTrainer:
         loss.backward()
         self.optimizer.step()
         return loss.item()
+
+    def train_epoch(self, train_loader):
+        self.visual_encoder.train()
+        self.audio_encoder.train()
+        self.fusion_module.train()
+        self.decoder.train()
+
+        total_loss = 0
+        for batch in train_loader:
+            loss = self.train_step(batch)
+            total_loss += loss
+        return total_loss / len(train_loader)
 
     def evaluate(self, dataloader):
         self.visual_encoder.eval()
@@ -65,12 +77,13 @@ class MultimodalTrainer:
                 fused_feat = self.fusion_module(visual_feat, audio_feat)
 
                 log_probs = self.decoder(fused_feat, None, input_lengths=v_len)
-                pred = log_probs.argmax(dim=-1)  # greedy decode
+                pred = log_probs.argmax(dim=-1)
 
                 for p, t in zip(pred, target):
-                    pred_txt = self.tokenizer.decode(p[p != 0].cpu().numpy())  # remove padding token
+                    pred_txt = self.tokenizer.decode(p[p != 0].cpu().numpy())
                     ref_txt = self.tokenizer.decode(t[t != 0].cpu().numpy())
                     hypotheses.append(pred_txt)
                     references.append(ref_txt)
 
         return wer(references, hypotheses)
+
