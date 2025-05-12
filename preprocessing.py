@@ -103,3 +103,10 @@ def save_all_sentence_labels(json_folder, save_dir):
     json_files = glob(os.path.join(json_folder, "*.json"))
     for json_path in json_files:
         save_sentence_labels(json_path, save_dir)
+
+json_folder = "input_texts"
+npy_dir = "processed_dataset/npy"
+text_dir = "processed_dataset/text"
+wav_dir = "input_videos"    
+crop_lip_all(json_folder, wav_dir, npy_dir)
+save_all_sentence_labels(json_folder, text_dir)
