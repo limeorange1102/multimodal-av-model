@@ -7,11 +7,10 @@ from glob import glob
 
 def crop_lip(video_path, json_path, save_dir, resize=(128, 128), fps=30):
     """
-    개선 버전: 모든 프레임을 메모리에 올려 디스크 접근 최소화 (속도 향상)
+    메모리 최적화 버전: 전체 프레임을 다 올리지 않고 필요한 구간만 읽는다.
     """
     os.makedirs(save_dir, exist_ok=True)
 
-    # JSON 로드
     with open(json_path, 'r', encoding='utf-8') as f:
         metadata = json.load(f)[0]
 
@@ -21,40 +20,31 @@ def crop_lip(video_path, json_path, save_dir, resize=(128, 128), fps=30):
     video_filename = os.path.splitext(os.path.basename(video_path))[0]
     cap = cv2.VideoCapture(video_path)
 
-    # ✅ 전체 프레임을 미리 메모리에 읽기
-    all_frames = []
-    success = True
-    while success:
-        success, frame = cap.read()
-        if success:
-            all_frames.append(frame)
-    cap.release()
-
-    # ✅ 문장 단위로 crop
     for sentence in tqdm(sentence_info, desc=f"Processing {video_filename}"):
         sent_id = sentence["ID"]
         start_frame = int(sentence["start_time"] * fps)
         end_frame = int(sentence["end_time"] * fps)
 
         frames = []
-        for frame_idx in range(start_frame, min(end_frame, len(lip_bboxes), len(all_frames))):
-            frame = all_frames[frame_idx]
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        for frame_idx in range(start_frame, min(end_frame, len(lip_bboxes))):
+            success, frame = cap.read()
+            if not success:
+                break
             x1, y1, x2, y2 = map(int, lip_bboxes[frame_idx])
             crop = frame[y1:y2, x1:x2]
             crop_resized = cv2.resize(crop, resize)
             frames.append(crop_resized)
 
         if frames:
-            arr = np.stack(frames)  # shape: [T, H, W, C]
+            arr = np.stack(frames)
             save_path = os.path.join(save_dir, f"{video_filename}_sentence_{sent_id}.npy")
             np.save(save_path, arr)
 
-    print(f"✅ {video_filename}: 모든 문장의 crop이 저장되었습니다 (.npy).")
+    cap.release()
+    print(f"✅ {video_filename}: 모든 문장 crop 완료")
 
 def save_sentence_labels(json_path, save_dir):
-    """
-    OLKAVS JSON 파일에서 각 문장의 텍스트 라벨을 추출해 .txt 파일로 저장한다.
-    """
     os.makedirs(save_dir, exist_ok=True)
 
     with open(json_path, 'r', encoding='utf-8') as f:
@@ -74,10 +64,6 @@ def save_sentence_labels(json_path, save_dir):
     print(f"✅ {len(sentence_info)}개의 문장 텍스트 라벨을 저장했습니다: {save_dir}")
 
 def build_data_list(json_folder, npy_dir, text_dir, wav_dir):
-    """
-    모든 JSON을 순회하며 문장 단위의 metadata 리스트를 생성한다.
-    이 리스트는 RandomSentencePairDataset에 입력으로 사용된다.
-    """
     data_list = []
 
     for filename in os.listdir(json_folder):
@@ -117,6 +103,3 @@ def save_all_sentence_labels(json_folder, save_dir):
     json_files = glob(os.path.join(json_folder, "*.json"))
     for json_path in json_files:
         save_sentence_labels(json_path, save_dir)
-
-# crop_lip_all("input_texts", "input_videos", "processed_dataset/npy")
-# save_all_sentence_labels("input_texts", "processed_dataset/text")
