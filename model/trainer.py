@@ -50,23 +50,29 @@ class MultimodalTrainer:
             text2 = batch["text2"].to(self.device)
 
             target = text1  # 주 화자의 문장만 인식
-            target_lengths = batch["text1_lengths"].to(self.device)
+            target_lengths = batch["text1_len"]
 
             visual_feat = self.visual_encoder(lip1)
             audio_feat = self.audio_encoder(audio)
             fused_feat = self.fusion_module(visual_feat, audio_feat)
 
             # 길이 계산
-            B, T, _ = fused_feat.shape
-            input_lengths = torch.full(size=(B,), fill_value=T, dtype=torch.long).to(self.device)
+            B = fused_feat.size(0)
+            T_fused = fused_feat.size(1)
+            T_audio = audio_feat.size(1)
+            T_visual = visual_feat.size(1)
+
+            input_lengths_fused = torch.full((B,), T_fused, dtype=torch.long).to(self.device)
+            input_lengths_audio = torch.full((B,), T_audio, dtype=torch.long).to(self.device)
+            input_lengths_visual = torch.full((B,), T_visual, dtype=torch.long).to(self.device)
 
             log_probs_fused = self.decoder(fused_feat)
             log_probs_audio = self.decoder_audio(audio_feat)
             log_probs_visual = self.decoder_visual(visual_feat)
 
-            loss_fused = self.ctc_loss(log_probs_fused.transpose(0, 1), target, input_lengths, target_lengths)
-            loss_audio = self.ctc_loss(log_probs_audio.transpose(0, 1), target, input_lengths, target_lengths)
-            loss_visual = self.ctc_loss(log_probs_visual.transpose(0, 1), target, input_lengths, target_lengths)
+            loss_fused = self.ctc_loss(log_probs_fused.transpose(0, 1), target, input_lengths_fused, target_lengths)
+            loss_audio = self.ctc_loss(log_probs_audio.transpose(0, 1), target, input_lengths_audio, target_lengths)
+            loss_visual = self.ctc_loss(log_probs_visual.transpose(0, 1), target, input_lengths_visual, target_lengths)
 
             loss = loss_fused + 0.5 * (loss_audio + loss_visual)
             loss.backward()
