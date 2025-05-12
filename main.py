@@ -3,7 +3,6 @@ from torch.utils.data import DataLoader
 import os, random, numpy as np
 from sklearn.model_selection import train_test_split
 
-
 from dataset.multi_speaker_dataset import RandomSentencePairDataset, FixedSentencePairDataset
 from dataset.collate_fn import collate_fn
 from model.encoder import VisualEncoder, AudioEncoder
@@ -40,7 +39,8 @@ def save_checkpoint(epoch, trainer, path):
         'visual_encoder': trainer.visual_encoder.state_dict(),
         'audio_encoder': trainer.audio_encoder.state_dict(),
         'fusion': trainer.fusion_module.state_dict(),
-        'decoder': trainer.decoder.state_dict(),
+        'decoder1': trainer.decoder1.state_dict(),
+        'decoder2': trainer.decoder2.state_dict(),
         'decoder_audio': trainer.decoder_audio.state_dict(),
         'decoder_visual': trainer.decoder_visual.state_dict(),
         'optimizer': trainer.optimizer.state_dict(),
@@ -51,7 +51,8 @@ def load_checkpoint(trainer, path):
     trainer.visual_encoder.load_state_dict(checkpoint['visual_encoder'])
     trainer.audio_encoder.load_state_dict(checkpoint['audio_encoder'])
     trainer.fusion_module.load_state_dict(checkpoint['fusion'])
-    trainer.decoder.load_state_dict(checkpoint['decoder'])
+    trainer.decoder1.load_state_dict(checkpoint['decoder1'])
+    trainer.decoder2.load_state_dict(checkpoint['decoder2'])
     trainer.decoder_audio.load_state_dict(checkpoint['decoder_audio'])
     trainer.decoder_visual.load_state_dict(checkpoint['decoder_visual'])
     trainer.optimizer.load_state_dict(checkpoint['optimizer'])
@@ -91,7 +92,13 @@ def main():
         fused_dim=512
     )
 
-    decoder = CTCDecoder(
+    decoder1 = CTCDecoder(
+        input_dim=512,
+        vocab_size=tokenizer.vocab_size,
+        blank_id=tokenizer.blank_id
+    )
+
+    decoder2 = CTCDecoder(
         input_dim=512,
         vocab_size=tokenizer.vocab_size,
         blank_id=tokenizer.blank_id
@@ -113,7 +120,7 @@ def main():
 
     trainer = MultimodalTrainer(
         visual_encoder, audio_encoder, fusion,
-        decoder, decoder_audio, decoder_visual,
+        decoder1, decoder2, decoder_audio, decoder_visual,
         tokenizer,
         learning_rate=1e-4,
         device=device
