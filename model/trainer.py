@@ -51,8 +51,8 @@ class MultimodalTrainer:
             audio = batch["audio"].to(self.device)
             text1 = batch["text1"].to(self.device)
             text2 = batch["text2"].to(self.device)
-            len1 = batch["text1_len"]
-            len2 = batch["text2_len"]
+            len1 = batch["text1_lengths"].to(self.device)
+            len2 = batch["text2_lengths"].to(self.device)
 
             visual_feat1 = self.visual_encoder(lip1)
             visual_feat2 = self.visual_encoder(lip2)
