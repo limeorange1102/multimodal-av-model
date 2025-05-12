@@ -1,68 +1,79 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from jiwer import wer  # for evaluation metric
-import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-
+import torch.nn.functional as F
+from jiwer import wer
 
 class MultimodalTrainer:
-    def __init__(self, visual_encoder, audio_encoder, fusion_module, decoder, tokenizer, device='cuda', learning_rate=1e-4):
+    def __init__(self, visual_encoder, audio_encoder, fusion_module,
+                 decoder, decoder_audio, decoder_visual,
+                 tokenizer, learning_rate=1e-4, device="cuda"):
         self.visual_encoder = visual_encoder.to(device)
         self.audio_encoder = audio_encoder.to(device)
         self.fusion_module = fusion_module.to(device)
+
         self.decoder = decoder.to(device)
+        self.decoder_audio = decoder_audio.to(device)
+        self.decoder_visual = decoder_visual.to(device)
+
         self.tokenizer = tokenizer
         self.device = device
 
-        self.parameters = list(self.visual_encoder.parameters()) + \
-                          list(self.audio_encoder.parameters()) + \
-                          list(self.fusion_module.parameters()) + \
-                          list(self.decoder.parameters())
+        self.ctc_loss = nn.CTCLoss(blank=tokenizer.blank_id, zero_infinity=True)
 
-        self.optimizer = optim.Adam(self.parameters, lr=learning_rate)
+        self.parameters = (
+            list(self.visual_encoder.parameters()) +
+            list(self.audio_encoder.parameters()) +
+            list(self.fusion_module.parameters()) +
+            list(self.decoder.parameters()) +
+            list(self.decoder_audio.parameters()) +
+            list(self.decoder_visual.parameters())
+        )
 
-    def train_step(self, batch):
+        self.optimizer = torch.optim.Adam(self.parameters, lr=learning_rate)
+
+    def train_epoch(self, dataloader):
         self.visual_encoder.train()
         self.audio_encoder.train()
         self.fusion_module.train()
         self.decoder.train()
-
-        visual = batch["lip1"].to(self.device)
-        audio = batch["audio"].to(self.device)
-        target = batch["text1"].to(self.device)
-        v_len = batch["lip1_lengths"].to(self.device)
-        a_len = batch["audio_lengths"].to(self.device)
-        t_len = batch["text1_lengths"].to(self.device)
-
-        visual_feat = self.visual_encoder(visual)
-        audio_feat = self.audio_encoder(audio)
-        fused_feat = self.fusion_module(visual_feat, audio_feat)
-
-        loss = self.decoder(fused_feat, target, input_lengths=v_len, target_lengths=t_len)
-
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        return loss.item()
-
-    def train_epoch(self, train_loader):
-        self.visual_encoder.train()
-        self.audio_encoder.train()
-        self.fusion_module.train()
-        self.decoder.train()
+        self.decoder_audio.train()
+        self.decoder_visual.train()
 
         total_loss = 0
-        for batch in train_loader:
-            loss = self.train_step(batch)
-            total_loss += loss
-        avg_loss = total_loss / len(train_loader)
-        logging.info(f"✅ 평균 Training Loss: {avg_loss:.4f}")
-        return avg_loss
+        for batch in dataloader:
+            self.optimizer.zero_grad()
+
+            lip1 = batch["lip1"].to(self.device)
+            lip2 = batch["lip2"].to(self.device)
+            audio = batch["audio"].to(self.device)
+            text1 = batch["text1"].to(self.device)
+            text2 = batch["text2"].to(self.device)
+
+            target = text1  # 주 화자의 문장만 인식
+            target_lengths = batch["text1_len"]
+
+            visual_feat = self.visual_encoder(lip1)
+            audio_feat = self.audio_encoder(audio)
+            fused_feat = self.fusion_module(visual_feat, audio_feat)
+
+            # 길이 계산
+            B, T, _ = fused_feat.shape
+            input_lengths = torch.full(size=(B,), fill_value=T, dtype=torch.long).to(self.device)
+
+            log_probs_fused = self.decoder(fused_feat)
+            log_probs_audio = self.decoder_audio(audio_feat)
+            log_probs_visual = self.decoder_visual(visual_feat)
+
+            loss_fused = self.ctc_loss(log_probs_fused.transpose(0, 1), target, input_lengths, target_lengths)
+            loss_audio = self.ctc_loss(log_probs_audio.transpose(0, 1), target, input_lengths, target_lengths)
+            loss_visual = self.ctc_loss(log_probs_visual.transpose(0, 1), target, input_lengths, target_lengths)
+
+            loss = loss_fused + 0.5 * (loss_audio + loss_visual)
+            loss.backward()
+            self.optimizer.step()
+            total_loss += loss.item()
+
+        return total_loss / len(dataloader)
 
     def evaluate(self, dataloader):
         self.visual_encoder.eval()
@@ -70,48 +81,25 @@ class MultimodalTrainer:
         self.fusion_module.eval()
         self.decoder.eval()
 
-        hypotheses1, references1 = [], []
-        hypotheses2, references2 = [], []
+        all_refs, all_hyps = [], []
 
         with torch.no_grad():
             for batch in dataloader:
+                lip1 = batch["lip1"].to(self.device)
                 audio = batch["audio"].to(self.device)
+                text1 = batch["text1"].to(self.device)
 
-                # --- text1 기준 평가 ---
-                visual1 = batch["lip1"].to(self.device)
-                target1 = batch["text1"].to(self.device)
-                v_len1 = batch["lip1_lengths"].to(self.device)
-
-                visual_feat1 = self.visual_encoder(visual1)
+                visual_feat = self.visual_encoder(lip1)
                 audio_feat = self.audio_encoder(audio)
-                fused_feat1 = self.fusion_module(visual_feat1, audio_feat)
-                log_probs1 = self.decoder(fused_feat1, None, input_lengths=v_len1)
-                pred1 = log_probs1.argmax(dim=-1)
+                fused_feat = self.fusion_module(visual_feat, audio_feat)
+                log_probs = self.decoder(fused_feat)
 
-                for p, t in zip(pred1, target1):
-                    hypotheses1.append(self.tokenizer.decode(p[p != self.tokenizer.blank_id].cpu().numpy()))
-                    references1.append(self.tokenizer.decode(t[t != self.tokenizer.pad_id].cpu().numpy()))
+                pred = torch.argmax(log_probs, dim=-1).cpu().numpy()
 
-                # --- text2 기준 평가 ---
-                visual2 = batch["lip2"].to(self.device)
-                target2 = batch["text2"].to(self.device)
-                v_len2 = batch["lip2_lengths"].to(self.device)
+                for p, t in zip(pred, text1):
+                    hyp = self.tokenizer.decode(p)
+                    ref = self.tokenizer.decode(t.cpu().numpy())
+                    all_hyps.append(hyp)
+                    all_refs.append(ref)
 
-                visual_feat2 = self.visual_encoder(visual2)
-                fused_feat2 = self.fusion_module(visual_feat2, audio_feat)
-                log_probs2 = self.decoder(fused_feat2, None, input_lengths=v_len2)
-                pred2 = log_probs2.argmax(dim=-1)
-
-                for p, t in zip(pred2, target2):
-                    hypotheses2.append(self.tokenizer.decode(p[p != self.tokenizer.blank_id].cpu().numpy()))
-                    references2.append(self.tokenizer.decode(t[t != self.tokenizer.pad_id].cpu().numpy()))
-
-        wer1 = wer(references1, hypotheses1)
-        wer2 = wer(references2, hypotheses2)
-        avg_wer = (wer1 + wer2) / 2
-
-        logging.info(f"🔎 WER1 (text1 기준): {wer1:.4f}")
-        logging.info(f"🔎 WER2 (text2 기준): {wer2:.4f}")
-        logging.info(f"🔎 평균 WER: {avg_wer:.4f}")
-
-        return avg_wer
+        return wer(all_refs, all_hyps)
