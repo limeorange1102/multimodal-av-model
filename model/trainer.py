@@ -50,7 +50,7 @@ class MultimodalTrainer:
             text2 = batch["text2"].to(self.device)
 
             target = text1  # 주 화자의 문장만 인식
-            target_lengths = batch["text1_len"]
+            target_lengths = batch["text1_lengths"].to(self.device)
 
             visual_feat = self.visual_encoder(lip1)
             audio_feat = self.audio_encoder(audio)
