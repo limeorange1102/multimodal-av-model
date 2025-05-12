@@ -1,104 +1,135 @@
 import torch
 import torch.nn as nn
-import torch.optim as optim
+import torch.nn.functional as F
 from jiwer import wer
 
 class MultimodalTrainer:
-    def __init__(self, visual_encoder, audio_encoder, fusion_module, decoder, tokenizer, device='cuda', learning_rate=1e-4):
+    def __init__(self, visual_encoder, audio_encoder, fusion_module,
+                 decoder1, decoder2, decoder_audio, decoder_visual,
+                 tokenizer, learning_rate=1e-4, device="cuda"):
         self.visual_encoder = visual_encoder.to(device)
         self.audio_encoder = audio_encoder.to(device)
         self.fusion_module = fusion_module.to(device)
-        self.decoder = decoder.to(device)
+
+        self.decoder1 = decoder1.to(device)
+        self.decoder2 = decoder2.to(device)
+        self.decoder_audio = decoder_audio.to(device)
+        self.decoder_visual = decoder_visual.to(device)
+
         self.tokenizer = tokenizer
         self.device = device
 
-        self.parameters = list(self.visual_encoder.parameters()) + \
-                          list(self.audio_encoder.parameters()) + \
-                          list(self.fusion_module.parameters()) + \
-                          list(self.decoder.parameters())
+        self.ctc_loss = nn.CTCLoss(blank=tokenizer.blank_id, zero_infinity=True)
 
-        self.optimizer = optim.Adam(self.parameters, lr=learning_rate)
+        self.parameters = (
+            list(self.visual_encoder.parameters()) +
+            list(self.audio_encoder.parameters()) +
+            list(self.fusion_module.parameters()) +
+            list(self.decoder1.parameters()) +
+            list(self.decoder2.parameters()) +
+            list(self.decoder_audio.parameters()) +
+            list(self.decoder_visual.parameters())
+        )
 
-    def train_step(self, batch):
+        self.optimizer = torch.optim.Adam(self.parameters, lr=learning_rate)
+
+    def train_epoch(self, dataloader):
         self.visual_encoder.train()
         self.audio_encoder.train()
         self.fusion_module.train()
-        self.decoder.train()
+        self.decoder1.train()
+        self.decoder2.train()
+        self.decoder_audio.train()
+        self.decoder_visual.train()
 
-        visual1 = batch["lip1"].to(self.device)
-        visual2 = batch["lip2"].to(self.device)
-        audio = batch["audio"].to(self.device)
-        attention_mask = batch["audio_attention_mask"].to(self.device)
-        target1 = batch["text1"].to(self.device)
-        target2 = batch["text2"].to(self.device)
-        v_len1 = batch["lip1_lengths"].to(self.device)
-        v_len2 = batch["lip2_lengths"].to(self.device)
-        t_len1 = batch["text1_lengths"].to(self.device)
-        t_len2 = batch["text2_lengths"].to(self.device)
+        total_loss = 0
+        for batch in dataloader:
+            self.optimizer.zero_grad()
 
-        audio_feat = self.audio_encoder(audio, attention_mask=attention_mask)
-        visual_feat1 = self.visual_encoder(visual1)
-        visual_feat2 = self.visual_encoder(visual2)
+            lip1 = batch["lip1"].to(self.device)
+            lip2 = batch["lip2"].to(self.device)
+            audio = batch["audio"].to(self.device)
+            text1 = batch["text1"].to(self.device)
+            text2 = batch["text2"].to(self.device)
+            len1 = batch["text1_len"]
+            len2 = batch["text2_len"]
 
-        fused_feat1 = self.fusion_module(visual_feat1, audio_feat)
-        fused_feat2 = self.fusion_module(visual_feat2, audio_feat)
+            visual_feat1 = self.visual_encoder(lip1)
+            visual_feat2 = self.visual_encoder(lip2)
+            audio_feat = self.audio_encoder(audio)
 
-        loss1 = self.decoder(fused_feat1, target1, input_lengths=v_len1, target_lengths=t_len1)
-        loss2 = self.decoder(fused_feat2, target2, input_lengths=v_len2, target_lengths=t_len2)
-        loss = (loss1 + loss2) / 2
+            fused_feat1 = self.fusion_module(visual_feat1, audio_feat)
+            fused_feat2 = self.fusion_module(visual_feat2, audio_feat)
 
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        return loss.item()
+            B = audio_feat.size(0)
+            input_lengths1 = torch.full((B,), fused_feat1.size(1), dtype=torch.long).to(self.device)
+            input_lengths2 = torch.full((B,), fused_feat2.size(1), dtype=torch.long).to(self.device)
+            input_lengths_audio = torch.full((B,), audio_feat.size(1), dtype=torch.long).to(self.device)
+            input_lengths_visual1 = torch.full((B,), visual_feat1.size(1), dtype=torch.long).to(self.device)
+            input_lengths_visual2 = torch.full((B,), visual_feat2.size(1), dtype=torch.long).to(self.device)
+
+            log_probs1 = self.decoder1(fused_feat1)
+            log_probs2 = self.decoder2(fused_feat2)
+            log_probs_audio = self.decoder_audio(audio_feat)
+            log_probs_visual1 = self.decoder_visual(visual_feat1)
+            log_probs_visual2 = self.decoder_visual(visual_feat2)
+
+            loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)
+            loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
+            loss_audio = self.ctc_loss(log_probs_audio.transpose(0, 1), text1, input_lengths_audio, len1)
+            loss_visual1 = self.ctc_loss(log_probs_visual1.transpose(0, 1), text1, input_lengths_visual1, len1)
+            loss_visual2 = self.ctc_loss(log_probs_visual2.transpose(0, 1), text2, input_lengths_visual2, len2)
+
+            loss = loss1 + loss2 + 0.5 * (loss_audio + loss_visual1 + loss_visual2)
+            loss.backward()
+            self.optimizer.step()
+            total_loss += loss.item()
+
+        return total_loss / len(dataloader)
 
     def evaluate(self, dataloader):
         self.visual_encoder.eval()
         self.audio_encoder.eval()
         self.fusion_module.eval()
-        self.decoder.eval()
+        self.decoder1.eval()
+        self.decoder2.eval()
 
-        hypotheses = []
-        references = []
+        all_refs1, all_hyps1 = [], []
+        all_refs2, all_hyps2 = [], []
 
         with torch.no_grad():
             for batch in dataloader:
-                visual1 = batch["lip1"].to(self.device)
-                visual2 = batch["lip2"].to(self.device)
+                lip1 = batch["lip1"].to(self.device)
+                lip2 = batch["lip2"].to(self.device)
                 audio = batch["audio"].to(self.device)
-                attention_mask = batch["audio_attention_mask"].to(self.device)
-                target1 = batch["text1"].to(self.device)
-                target2 = batch["text2"].to(self.device)
-                v_len1 = batch["lip1_lengths"].to(self.device)
-                v_len2 = batch["lip2_lengths"].to(self.device)
+                text1 = batch["text1"].to(self.device)
+                text2 = batch["text2"].to(self.device)
 
-                audio_feat = self.audio_encoder(audio, attention_mask=attention_mask)
-                visual_feat1 = self.visual_encoder(visual1)
-                visual_feat2 = self.visual_encoder(visual2)
+                visual_feat1 = self.visual_encoder(lip1)
+                visual_feat2 = self.visual_encoder(lip2)
+                audio_feat = self.audio_encoder(audio)
 
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat)
 
-                log_probs1 = self.decoder(fused_feat1, None, input_lengths=v_len1)
-                log_probs2 = self.decoder(fused_feat2, None, input_lengths=v_len2)
-                pred1 = log_probs1.argmax(dim=-1)
-                pred2 = log_probs2.argmax(dim=-1)
+                log_probs1 = self.decoder1(fused_feat1)
+                log_probs2 = self.decoder2(fused_feat2)
 
-                for p1, t1, p2, t2 in zip(pred1, target1, pred2, target2):
-                    pred_txt1 = self.tokenizer.decode(p1[p1 != 0].cpu().numpy())
-                    ref_txt1 = self.tokenizer.decode(t1[t1 != 0].cpu().numpy())
-                    pred_txt2 = self.tokenizer.decode(p2[p2 != 0].cpu().numpy())
-                    ref_txt2 = self.tokenizer.decode(t2[t2 != 0].cpu().numpy())
-                    hypotheses.extend([pred_txt1, pred_txt2])
-                    references.extend([ref_txt1, ref_txt2])
+                pred1 = torch.argmax(log_probs1, dim=-1).cpu().numpy()
+                pred2 = torch.argmax(log_probs2, dim=-1).cpu().numpy()
 
-        return wer(references, hypotheses)
+                for p, t in zip(pred1, text1):
+                    hyp = self.tokenizer.decode(p)
+                    ref = self.tokenizer.decode(t.cpu().numpy())
+                    all_hyps1.append(hyp)
+                    all_refs1.append(ref)
 
-    def train_epoch(self, dataloader):
-        total_loss = 0
-        for batch in dataloader:
-            loss = self.train_step(batch)
-            total_loss += loss
-        avg_loss = total_loss / len(dataloader)
-        print(f"✅ Train Loss: {avg_loss:.4f}")
-        return avg_loss
+                for p, t in zip(pred2, text2):
+                    hyp = self.tokenizer.decode(p)
+                    ref = self.tokenizer.decode(t.cpu().numpy())
+                    all_hyps2.append(hyp)
+                    all_refs2.append(ref)
+
+        wer1 = wer(all_refs1, all_hyps1)
+        wer2 = wer(all_refs2, all_hyps2)
+        return (wer1 + wer2) / 2
