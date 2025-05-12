@@ -10,17 +10,6 @@ import torchaudio.transforms as T
 class BaseSentencePairDataset(Dataset):
     def __init__(self, sr=16000):
         self.sr = sr
-        self.mel_transform = T.MelSpectrogram(
-            sample_rate=sr,
-            n_fft=400,
-            hop_length=160,
-            n_mels=80
-        )
-
-    def waveform_to_log_mel(self, waveform):
-        mel_spec = self.mel_transform(waveform)  # [1, 80, T]
-        log_mel_spec = torch.log(mel_spec + 1e-6)
-        return log_mel_spec.squeeze(0).transpose(0, 1)  # [T, 80]
 
     def _process_pair(self, s1, s2, tokenizer):
         # 입술 영상 로딩
@@ -46,14 +35,13 @@ class BaseSentencePairDataset(Dataset):
         mix = mix / (np.max(np.abs(mix)) + 1e-6)
 
         mix_tensor = torch.from_numpy(mix).float().unsqueeze(0)  # [1, T]
-        log_mel = self.waveform_to_log_mel(mix_tensor)           # [T, 80]
 
         return {
             "lip1": lip1,
             "lip2": lip2,
             "text1": label1,
             "text2": label2,
-            "audio": log_mel
+            "audio": torch.tensor(mix[:min_len], dtype=torch.float)  # raw waveform
         }
 
 

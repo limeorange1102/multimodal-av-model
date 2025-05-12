@@ -1,29 +1,17 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
-import nemo.collections.asr as nemo_asr
-from nemo.collections.asr.models import EncDecCTCModel
-import math
+from transformers import Wav2Vec2Model
 
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=2048):
-        super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len).unsqueeze(1).float()
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self.pe = pe.unsqueeze(0)  # [1, T, D]
-
-    def forward(self, x):
-        return x + self.pe[:, :x.size(1), :].to(x.device)
-
-
+# -------------------------------
+# 📌 영상 인코더: VisualEncoder
+# -------------------------------
 class VisualEncoder(nn.Module):
     def __init__(self, pretrained_path=None, hidden_dim=256, lstm_layers=2, bidirectional=True):
         super().__init__()
+
         self.resnet = models.resnet34(weights=None)
-        self.resnet.fc = nn.Identity()
+        self.resnet.fc = nn.Identity()  # feature만 추출
 
         self.rnn = nn.LSTM(
             input_size=512,
@@ -41,29 +29,30 @@ class VisualEncoder(nn.Module):
                 self.resnet.load_state_dict(state_dict, strict=False)
                 print(f"✅ VisualEncoder weights loaded from {pretrained_path}")
             except Exception as e:
-                print(f"❌ Failed to load weights: {e}")
+                print(f"❌ Failed to load VisualEncoder weights: {e}")
 
     def forward(self, x):
+        # x: (B, T, C, H, W)
         B, T, C, H, W = x.shape
         x = x.view(B * T, C, H, W)
-        feats = self.resnet(x)
-        feats = feats.view(B, T, -1)
+        feats = self.resnet(x)         # (B*T, 512)
+        feats = feats.view(B, T, -1)   # (B, T, 512)
         output, _ = self.rnn(feats)
-        return output
+        return output  # (B, T, output_dim)
 
-
-class RivaConformerAudioEncoder(nn.Module):
-    def __init__(self, pretrained_name='stt_ko_conformer_ctc_large', freeze=True):
+# -------------------------------
+# 🎧 음성 인코더: HuggingFaceAudioEncoder
+# -------------------------------
+class AudioEncoder(nn.Module):
+    def __init__(self, model_name="kresnik/wav2vec2-large-xlsr-korean", freeze=True):
         super().__init__()
-        self.model = EncDecCTCModel.from_pretrained(model_name=pretrained_name)
+        self.model = Wav2Vec2Model.from_pretrained(model_name)
+        self.output_dim = self.model.config.hidden_size
         if freeze:
-            self.model.freeze()
-        self.output_dim = self.model.encoder._feat_out  # Extracted feature dim
+            for param in self.model.parameters():
+                param.requires_grad = False
 
-    def forward(self, x, lengths=None):
-        # Expecting [B, T, F] log-mel spectrogram input
-        # lengths is required for masking in some NeMo models
-        if lengths is None:
-            lengths = torch.full((x.size(0),), x.size(1), dtype=torch.long, device=x.device)
-        features = self.model.encoder(x, lengths=lengths)
-        return features
+    def forward(self, x, attention_mask=None):
+        # x: [B, T], attention_mask: [B, T]
+        output = self.model(input_values=x, attention_mask=attention_mask, return_dict=True)
+        return output.last_hidden_state  # [B, T, output_dim]
