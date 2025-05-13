@@ -35,7 +35,7 @@ class MultimodalTrainer:
         self.optimizer = torch.optim.Adam(self.parameters, lr=learning_rate)
 
     def train_epoch(self, dataloader):
-        print("✅ train_epoch() 진입")
+        print("✅ train_epoch() 짱입")
 
         self.visual_encoder.train()
         self.audio_encoder.train()
@@ -52,6 +52,7 @@ class MultimodalTrainer:
             lip1 = batch["lip1"].to(self.device)
             lip2 = batch["lip2"].to(self.device)
             audio = batch["audio"].to(self.device)
+            audio_mask = batch["audio_attention_mask"].to(self.device)
             text1 = batch["text1"].to(self.device)
             text2 = batch["text2"].to(self.device)
             len1 = batch["text1_lengths"].to(self.device)
@@ -59,7 +60,7 @@ class MultimodalTrainer:
 
             visual_feat1 = self.visual_encoder(lip1)
             visual_feat2 = self.visual_encoder(lip2)
-            audio_feat = self.audio_encoder(audio)
+            audio_feat = self.audio_encoder(audio, attention_mask=audio_mask)
 
             fused_feat1 = self.fusion_module(visual_feat1, audio_feat)
             fused_feat2 = self.fusion_module(visual_feat2, audio_feat)
@@ -116,6 +117,7 @@ class MultimodalTrainer:
                 lip1 = batch["lip1"].to(self.device)
                 lip2 = batch["lip2"].to(self.device)
                 audio = batch["audio"].to(self.device)
+                audio_mask = batch["audio_attention_mask"].to(self.device)
                 text1 = batch["text1"].to(self.device)
                 text2 = batch["text2"].to(self.device)
                 len1 = batch["text1_lengths"].to(self.device)
@@ -123,7 +125,7 @@ class MultimodalTrainer:
 
                 visual_feat1 = self.visual_encoder(lip1)
                 visual_feat2 = self.visual_encoder(lip2)
-                audio_feat = self.audio_encoder(audio)
+                audio_feat = self.audio_encoder(audio, attention_mask=audio_mask)
 
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat)
@@ -134,17 +136,20 @@ class MultimodalTrainer:
                 pred1 = torch.argmax(log_probs1, dim=-1).cpu().numpy()
                 pred2 = torch.argmax(log_probs2, dim=-1).cpu().numpy()
 
-                for p, t, l in zip(pred1, text1, len1):
-                    p_ids = self.ctc_decode(p[:int(l)])
+                input_lengths1 = fused_feat1.size(1)
+                input_lengths2 = fused_feat2.size(1)
+
+                for i in range(len(pred1)):
+                    p_ids = self.ctc_decode(pred1[i][:input_lengths1])
+                    ref = self.tokenizer.decode(text1[i][:len1[i]].cpu().numpy())
                     hyp = self.tokenizer.decode(p_ids)
-                    ref = self.tokenizer.decode(t[:int(l)].cpu().numpy())
                     all_hyps1.append(hyp)
                     all_refs1.append(ref)
 
-                for p, t, l in zip(pred2, text2, len2):
-                    p_ids = self.ctc_decode(p[:int(l)])
+                for i in range(len(pred2)):
+                    p_ids = self.ctc_decode(pred2[i][:input_lengths2])
+                    ref = self.tokenizer.decode(text2[i][:len2[i]].cpu().numpy())
                     hyp = self.tokenizer.decode(p_ids)
-                    ref = self.tokenizer.decode(t[:int(l)].cpu().numpy())
                     all_hyps2.append(hyp)
                     all_refs2.append(ref)
 

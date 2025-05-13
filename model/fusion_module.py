@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class CrossAttentionFusion(nn.Module):
     def __init__(self, visual_dim, audio_dim, fused_dim, num_heads=4):
         super().__init__()
@@ -18,13 +17,22 @@ class CrossAttentionFusion(nn.Module):
         # Step 3: concat된 결과를 하나의 fused vector로 projection
         self.fusion_proj = nn.Linear(fused_dim * 2, fused_dim)
 
+        # ✅ Step 4: Temporal modeling (BiLSTM + projection)
+        self.temporal_model = nn.LSTM(
+            input_size=fused_dim,
+            hidden_size=fused_dim,
+            num_layers=2,
+            batch_first=True,
+            bidirectional=True
+        )
+        self.temporal_proj = nn.Linear(fused_dim * 2, fused_dim)  # 다시 projection
+
     def forward(self, visual_feat, audio_feat):
         """
         visual_feat: [B, T_v, D_v]
         audio_feat:  [B, T_a, D_a]
         Returns: fused_feat [B, T, fused_dim]
         """
-        # Step 0: 시간축 보정 (보통 visual 기준으로 맞춤)
         T_v = visual_feat.size(1)
         T_a = audio_feat.size(1)
 
@@ -32,16 +40,17 @@ class CrossAttentionFusion(nn.Module):
             audio_feat = F.interpolate(audio_feat.permute(0, 2, 1), size=T_v, mode='linear', align_corners=True)
             audio_feat = audio_feat.permute(0, 2, 1)
 
-        # Step 1: 각 modality projection
         v = self.visual_proj(visual_feat)  # [B, T, D]
         a = self.audio_proj(audio_feat)    # [B, T, D]
 
-        # Step 2: 서로에게 cross attention
-        v2a, _ = self.cross_attn_visual(query=v, key=a, value=a)  # visual이 audio attend
-        a2v, _ = self.cross_attn_audio(query=a, key=v, value=v)   # audio가 visual attend
+        v2a, _ = self.cross_attn_visual(query=v, key=a, value=a)  # visual attends to audio
+        a2v, _ = self.cross_attn_audio(query=a, key=v, value=v)   # audio attends to visual
 
-        # Step 3: concat 후 projection
-        fused = torch.cat([v2a, a2v], dim=-1)      # [B, T, 2D]
-        fused = self.fusion_proj(fused)            # [B, T, D]
+        fused = torch.cat([v2a, a2v], dim=-1)     # [B, T, 2D]
+        fused = self.fusion_proj(fused)           # [B, T, D]
 
-        return fused
+        # ✅ Temporal modeling
+        fused_seq, _ = self.temporal_model(fused)       # [B, T, 2D]
+        fused_seq = self.temporal_proj(fused_seq)       # [B, T, D]
+
+        return fused_seq
