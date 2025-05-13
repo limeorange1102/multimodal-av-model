@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader
 import os, random, numpy as np
 from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
 
 from dataset.multi_speaker_dataset import RandomSentencePairDataset, FixedSentencePairDataset
 from dataset.collate_fn import collate_fn
@@ -74,8 +75,8 @@ def main():
     train_dataset = RandomSentencePairDataset(train_sent, tokenizer, num_pairs_per_epoch=10000)
     val_dataset = FixedSentencePairDataset(val_pairs, tokenizer)
 
-    train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True, num_workers=0, collate_fn=collate_fn)
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=3, shuffle=True, num_workers=2, collate_fn=collate_fn)
+    val_loader = DataLoader(val_dataset, batch_size=3, shuffle=False, num_workers=2, collate_fn=collate_fn)
 
     visual_encoder = VisualEncoder(
         pretrained_path="weights/Video_only_model.pt",
@@ -131,8 +132,10 @@ def main():
 
     last_ckpt_path = os.path.join(drive_ckpt_dir, "last_checkpoint.pt")
     best_ckpt_path = os.path.join(drive_ckpt_dir, "best_checkpoint.pt")
+    wer_log_path = os.path.join(drive_ckpt_dir, "wer_log.csv")
     start_epoch = 1
     best_wer = 1.0
+    wer_history = []
 
     if os.path.exists(last_ckpt_path):
         logging.info("🔁 기존 체크포인트 불러오는 중...")
@@ -140,6 +143,8 @@ def main():
         logging.info(f"➡️  Epoch {start_epoch}부터 재개")
     print(f"🧪 start_epoch={start_epoch}")
 
+    with open(wer_log_path, "w") as f:
+        f.write("epoch,wer\n")
 
     print("▶️ for epoch 진입", flush=True)
     for epoch in range(start_epoch, 21):
@@ -148,6 +153,10 @@ def main():
         loss = trainer.train_epoch(train_loader)
 
         wer_score = trainer.evaluate(val_loader)
+        wer_history.append(wer_score)
+
+        with open(wer_log_path, "a") as f:
+            f.write(f"{epoch},{wer_score:.4f}\n")
 
         save_checkpoint(epoch, trainer, last_ckpt_path)
         logging.info("💾 마지막 체크포인트 저장 완료")
@@ -156,6 +165,15 @@ def main():
             best_wer = wer_score
             save_checkpoint(epoch, trainer, best_ckpt_path)
             logging.info("🏅 Best 모델 갱신 및 저장 완료")
+
+    # WER 시각화
+    plt.plot(range(start_epoch, 21), wer_history, marker='o')
+    plt.xlabel("Epoch")
+    plt.ylabel("WER")
+    plt.title("Validation WER over Epochs")
+    plt.grid(True)
+    plt.savefig(os.path.join(drive_ckpt_dir, "wer_plot.png"))
+    plt.show()
 
 if __name__ == "__main__":
     main()
