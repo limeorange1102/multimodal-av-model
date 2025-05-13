@@ -136,9 +136,13 @@ def main():
         logging.info("🔁 기존 체크포인트 불러오는 중...")
         start_epoch = load_checkpoint(trainer, last_ckpt_path)
         logging.info(f"➡️  Epoch {start_epoch}부터 재개")
+    print(f"🧪 start_epoch={start_epoch}")
 
+
+    print("▶️ for epoch 진입", flush=True)
     for epoch in range(start_epoch, 21):
         logging.info(f"\n📚 Epoch {epoch}/20")
+        print(f"\n📚 Epoch {epoch}/20", flush=True)
         loss = trainer.train_epoch(train_loader)
 
         wer_score = trainer.evaluate(val_loader)
