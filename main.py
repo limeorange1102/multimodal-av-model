@@ -67,10 +67,6 @@ def main():
     text_dir = "processed_dataset/text"
     wav_dir = "input_videos"
 
-    crop_lip_all(json_folder, wav_dir, npy_dir)
-    save_all_sentence_labels(json_folder, text_dir)
-    train_tokenizer_from_txt_folder(text_dir)
-
     tokenizer = Tokenizer(vocab_path="utils/tokenizer800.vocab")
     sentence_list = build_data_list(json_folder, npy_dir, text_dir, wav_dir)
     train_sent, val_sent = train_test_split(sentence_list, test_size=0.1, random_state=42)

@@ -160,11 +160,11 @@ def save_all_sentence_labels(json_folder, save_dir):
     for json_path in json_files:
         save_sentence_labels(json_path, save_dir)
 
-video_folder = "input_videos"
-json_folder = "input_texts"
-npy_dir = "processed_dataset/npy"
-text_dir = "processed_dataset/text"
-wav_dir = "input_videos"    
+# video_folder = "input_videos"
+# json_folder = "input_texts"
+# npy_dir = "processed_dataset/npy"
+# text_dir = "processed_dataset/text"
+# wav_dir = "input_videos"    
 
-crop_lip_all(json_folder, video_folder, npy_dir)
-save_all_sentence_labels(json_folder, text_dir)
+# crop_lip_all(json_folder, video_folder, npy_dir)
+# save_all_sentence_labels(json_folder, text_dir)
