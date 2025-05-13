@@ -126,9 +126,11 @@ def main():
         device=device
     )
 
-    os.makedirs("checkpoints", exist_ok=True)
-    last_ckpt_path = "checkpoints/last_checkpoint.pt"
-    best_ckpt_path = "checkpoints/best_checkpoint.pt"
+    drive_ckpt_dir = "/content/drive/MyDrive/lip_audio_multimodal/checkpoints"
+    os.makedirs(drive_ckpt_dir, exist_ok=True)
+
+    last_ckpt_path = os.path.join(drive_ckpt_dir, "last_checkpoint.pt")
+    best_ckpt_path = os.path.join(drive_ckpt_dir, "best_checkpoint.pt")
     start_epoch = 1
     best_wer = 1.0
 
