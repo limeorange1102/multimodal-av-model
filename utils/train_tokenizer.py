@@ -2,7 +2,7 @@ import os
 from glob import glob
 import sentencepiece as spm
 
-def train_tokenizer_from_txt_folder(txt_folder, model_prefix='utils/tokenizer800', vocab_size=800):
+def train_tokenizer_from_txt_folder(txt_folder, model_prefix='utils/tokenizer800', vocab_size=1300):
     # 1. 모든 .txt 파일 경로 수집
     txt_files = glob(os.path.join(txt_folder, "*.txt"))
     if len(txt_files) == 0:
@@ -26,4 +26,3 @@ def train_tokenizer_from_txt_folder(txt_folder, model_prefix='utils/tokenizer800
     print(f"✅ 학습 완료: {model_prefix}.model / {model_prefix}.vocab")
 
 train_tokenizer_from_txt_folder("processed_dataset/text")
-# train_tokenizer_from_txt_folder("processed_dataset/text", model_prefix="utils/tokenizer800", vocab_size=800)
