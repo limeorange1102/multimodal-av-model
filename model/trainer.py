@@ -92,6 +92,16 @@ class MultimodalTrainer:
 
         return total_loss / len(dataloader)
 
+    def ctc_decode(self, pred_ids):
+        result = []
+        prev = None
+        for idx in pred_ids:
+            if idx == self.tokenizer.blank_id:
+                continue
+            if idx != prev:
+                result.append(idx)
+            prev = idx
+        return result
 
     def evaluate(self, dataloader):
         self.visual_encoder.eval()
@@ -110,6 +120,8 @@ class MultimodalTrainer:
                 audio = batch["audio"].to(self.device)
                 text1 = batch["text1"].to(self.device)
                 text2 = batch["text2"].to(self.device)
+                len1 = batch["text1_lengths"].to(self.device)
+                len2 = batch["text2_lengths"].to(self.device)
 
                 visual_feat1 = self.visual_encoder(lip1)
                 visual_feat2 = self.visual_encoder(lip2)
@@ -124,15 +136,17 @@ class MultimodalTrainer:
                 pred1 = torch.argmax(log_probs1, dim=-1).cpu().numpy()
                 pred2 = torch.argmax(log_probs2, dim=-1).cpu().numpy()
 
-                for p, t in zip(pred1, text1):
-                    hyp = self.tokenizer.decode(p)
-                    ref = self.tokenizer.decode(t.cpu().numpy())
+                for p, t, l in zip(pred1, text1, len1):
+                    p_ids = self.ctc_decode(p[:int(l)])
+                    hyp = self.tokenizer.decode(p_ids)
+                    ref = self.tokenizer.decode(t[:int(l)].cpu().numpy())
                     all_hyps1.append(hyp)
                     all_refs1.append(ref)
 
-                for p, t in zip(pred2, text2):
-                    hyp = self.tokenizer.decode(p)
-                    ref = self.tokenizer.decode(t.cpu().numpy())
+                for p, t, l in zip(pred2, text2, len2):
+                    p_ids = self.ctc_decode(p[:int(l)])
+                    hyp = self.tokenizer.decode(p_ids)
+                    ref = self.tokenizer.decode(t[:int(l)].cpu().numpy())
                     all_hyps2.append(hyp)
                     all_refs2.append(ref)
 
