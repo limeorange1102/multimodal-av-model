@@ -34,6 +34,8 @@ class MultimodalTrainer:
         self.optimizer = torch.optim.Adam(self.parameters, lr=learning_rate)
 
     def train_epoch(self, dataloader):
+        print("✅ train_epoch() 진입")  # 디버깅 로그 추가
+
         self.visual_encoder.train()
         self.audio_encoder.train()
         self.fusion_module.train()
@@ -43,7 +45,10 @@ class MultimodalTrainer:
         self.decoder_visual.train()
 
         total_loss = 0
-        for batch in dataloader:
+        for batch_idx, batch in enumerate(dataloader):
+            if batch_idx == 0:
+                print("🚀 첫 번째 배치 진입 성공")
+
             self.optimizer.zero_grad()
 
             lip1 = batch["lip1"].to(self.device)
@@ -86,6 +91,7 @@ class MultimodalTrainer:
             total_loss += loss.item()
 
         return total_loss / len(dataloader)
+
 
     def evaluate(self, dataloader):
         self.visual_encoder.eval()
