@@ -32,7 +32,7 @@ class VisualEncoder(nn.Module):
                 print(f"❌ Failed to load VisualEncoder weights: {e}")
 
     def forward(self, x):
-        # x: (B, T, C, H, W)
+        print(f"🧪 VisualEncoder 입력 shape: {x.shape}")  # (B, T, C, H, W)
         B, T, C, H, W = x.shape
         x = x.view(B * T, C, H, W)
         feats = self.resnet(x)         # (B*T, 512)
