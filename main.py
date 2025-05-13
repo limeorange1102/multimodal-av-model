@@ -1,156 +1,155 @@
-import os
-import cv2
-import json
-import numpy as np
-from tqdm import tqdm
-from glob import glob
 import torch
+from torch.utils.data import DataLoader
+import os, random, numpy as np
+from sklearn.model_selection import train_test_split
+
+from dataset.multi_speaker_dataset import RandomSentencePairDataset, FixedSentencePairDataset
+from dataset.collate_fn import collate_fn
+from model.encoder import VisualEncoder, AudioEncoder
+from model.fusion_module import CrossAttentionFusion
+from model.decoder import CTCDecoder
+from model.trainer import MultimodalTrainer
+from utils.tokenizer import Tokenizer
+from preprocessing import build_data_list
+
 import logging
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
-def crop_lip(video_path, json_path, save_dir, resize=(128, 128), fps=30):
-    """
-    메모리 최적화 + bbox 유효성 검사 + skip 문장 카운트
-    """
-    os.makedirs(save_dir, exist_ok=True)
+def set_seed(seed=42):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
-    with open(json_path, 'r', encoding='utf-8') as f:
-        metadata = json.load(f)[0]
+def generate_fixed_pairs(sentence_list, n_pairs=1000):
+    pairs = []
+    indices = list(range(len(sentence_list)))
+    for _ in range(n_pairs):
+        i, j = random.sample(indices, 2)
+        pairs.append((sentence_list[i], sentence_list[j]))
+    return pairs
 
-    sentence_info = metadata["Sentence_info"]
-    lip_bboxes = metadata["Bounding_box_info"]["Lip_bounding_box"]["xtl_ytl_xbr_ybr"]
+def save_checkpoint(epoch, trainer, path):
+    torch.save({
+        'epoch': epoch,
+        'visual_encoder': trainer.visual_encoder.state_dict(),
+        'audio_encoder': trainer.audio_encoder.state_dict(),
+        'fusion': trainer.fusion_module.state_dict(),
+        'decoder1': trainer.decoder1.state_dict(),
+        'decoder2': trainer.decoder2.state_dict(),
+        'decoder_audio': trainer.decoder_audio.state_dict(),
+        'decoder_visual': trainer.decoder_visual.state_dict(),
+        'optimizer': trainer.optimizer.state_dict(),
+    }, path)
 
-    video_filename = os.path.splitext(os.path.basename(video_path))[0]
-    cap = cv2.VideoCapture(video_path)
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+def load_checkpoint(trainer, path):
+    checkpoint = torch.load(path, map_location=trainer.device)
+    trainer.visual_encoder.load_state_dict(checkpoint['visual_encoder'])
+    trainer.audio_encoder.load_state_dict(checkpoint['audio_encoder'])
+    trainer.fusion_module.load_state_dict(checkpoint['fusion'])
+    trainer.decoder1.load_state_dict(checkpoint['decoder1'])
+    trainer.decoder2.load_state_dict(checkpoint['decoder2'])
+    trainer.decoder_audio.load_state_dict(checkpoint['decoder_audio'])
+    trainer.decoder_visual.load_state_dict(checkpoint['decoder_visual'])
+    trainer.optimizer.load_state_dict(checkpoint['optimizer'])
+    return checkpoint['epoch'] + 1
 
-    skipped_count = 0
+def main():
+    set_seed()
 
-    for sentence in tqdm(sentence_info, desc=f"Processing {video_filename}"):
-        sent_id = sentence["ID"]
-        start_frame = int(sentence["start_time"] * fps)
-        end_frame = int(sentence["end_time"] * fps)
+    json_folder = "input_texts"
+    npy_dir = "processed_dataset/npy"
+    text_dir = "processed_dataset/text"
+    wav_dir = "input_videos"
 
-        if start_frame >= len(lip_bboxes):
-            print(f"⚠️ 문장 ID {sent_id}의 start_frame({start_frame})이 bbox 개수({len(lip_bboxes)})보다 큽니다. 건너뜀.")
-            skipped_count += 1
-            continue
+    tokenizer = Tokenizer(vocab_path="utils/tokenizer800.vocab")
+    sentence_list = build_data_list(json_folder, npy_dir, text_dir, wav_dir)
+    train_sent, val_sent = train_test_split(sentence_list, test_size=0.1, random_state=42)
+    val_pairs = generate_fixed_pairs(val_sent, n_pairs=500)
 
-        frames = []
-        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-        invalid = False
+    train_dataset = RandomSentencePairDataset(train_sent, tokenizer, num_pairs_per_epoch=10000)
+    val_dataset = FixedSentencePairDataset(val_pairs, tokenizer)
 
-        for frame_idx in range(start_frame, min(end_frame, len(lip_bboxes))):
-            success, frame = cap.read()
-            if not success or frame is None:
-                print(f"⚠️ frame 읽기 실패: frame {frame_idx} (영상: {video_filename})")
-                invalid = True
-                break
+    train_loader = DataLoader(train_dataset, batch_size=3, shuffle=True, num_workers=4, collate_fn=collate_fn)
+    val_loader = DataLoader(val_dataset, batch_size=3, shuffle=False, num_workers=4, collate_fn=collate_fn)
 
-            x1, y1, x2, y2 = map(int, lip_bboxes[frame_idx])
-            x1, x2 = max(0, x1), min(w, x2)
-            y1, y2 = max(0, y1), min(h, y2)
+    visual_encoder = VisualEncoder(
+        pretrained_path="weights/Video_only_model.pt",
+        hidden_dim=256,
+        lstm_layers=2,
+        bidirectional=True
+    )
 
-            if x2 <= x1 or y2 <= y1:
-                print(f"⚠️ 잘못된 bbox: frame {frame_idx}, box=({x1}, {y1}, {x2}, {y2}) → 문장 전체 건너뜀")
-                invalid = True
-                break
+    audio_encoder = AudioEncoder(freeze=False)
 
-            crop = frame[y1:y2, x1:x2]
-            if crop.size == 0:
-                print(f"⚠️ 빈 crop 발생: frame {frame_idx}, 문장 전체 건너뜀")
-                invalid = True
-                break
+    fusion = CrossAttentionFusion(
+        visual_dim=visual_encoder.output_dim,
+        audio_dim=audio_encoder.output_dim,
+        fused_dim=512
+    )
 
-            crop_resized = cv2.resize(crop, resize)
-            frames.append(crop_resized)
+    decoder1 = CTCDecoder(
+        input_dim=512,
+        vocab_size=tokenizer.vocab_size,
+        blank_id=tokenizer.blank_id
+    )
 
-        if invalid or not frames:
-            skipped_count += 1
-            continue
+    decoder2 = CTCDecoder(
+        input_dim=512,
+        vocab_size=tokenizer.vocab_size,
+        blank_id=tokenizer.blank_id
+    )
 
-        arr = np.stack(frames)
-        save_path = os.path.join(save_dir, f"{video_filename}_sentence_{sent_id}.npy")
-        np.save(save_path, arr)
+    decoder_audio = CTCDecoder(
+        input_dim=audio_encoder.output_dim,
+        vocab_size=tokenizer.vocab_size,
+        blank_id=tokenizer.blank_id
+    )
 
-    cap.release()
-    print(f"✅ {video_filename}: 모든 문장 crop 완료 (스킵된 문장 수: {skipped_count})")
+    decoder_visual = CTCDecoder(
+        input_dim=visual_encoder.output_dim,
+        vocab_size=tokenizer.vocab_size,
+        blank_id=tokenizer.blank_id
+    )
 
-def save_sentence_labels(json_path, save_dir):
-    os.makedirs(save_dir, exist_ok=True)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    with open(json_path, 'r', encoding='utf-8') as f:
-        metadata = json.load(f)[0]
+    trainer = MultimodalTrainer(
+        visual_encoder, audio_encoder, fusion,
+        decoder1, decoder2, decoder_audio, decoder_visual,
+        tokenizer,
+        learning_rate=1e-4,
+        device=device
+    )
 
-    video_filename = os.path.splitext(os.path.basename(json_path))[0]
-    sentence_info = metadata["Sentence_info"]
+    os.makedirs("checkpoints", exist_ok=True)
+    last_ckpt_path = "checkpoints/last_checkpoint.pt"
+    best_ckpt_path = "checkpoints/best_checkpoint.pt"
+    start_epoch = 1
+    best_wer = 1.0
 
-    for sentence in sentence_info:
-        sent_id = sentence["ID"]
-        text = sentence["sentence_text"].strip()
+    if os.path.exists(last_ckpt_path):
+        logging.info("🔁 기존 체크포인트 불러오는 중...")
+        start_epoch = load_checkpoint(trainer, last_ckpt_path)
+        logging.info(f"➡️  Epoch {start_epoch}부터 재개")
 
-        save_path = os.path.join(save_dir, f"{video_filename}_sentence_{sent_id}.txt")
-        with open(save_path, 'w', encoding='utf-8') as f_out:
-            f_out.write(text + "\n")
+    for epoch in range(start_epoch, 21):
+        logging.info(f"\n📚 Epoch {epoch}/20")
+        loss = trainer.train_epoch(train_loader)
 
-    print(f"✅ {len(sentence_info)}개의 문장 텍스트 라벨을 저장했습니다: {save_dir}")
+        wer_score = trainer.evaluate(val_loader)
 
-def build_data_list(json_folder, npy_dir, text_dir, wav_dir):
-    data_list = []
+        save_checkpoint(epoch, trainer, last_ckpt_path)
+        logging.info("💾 마지막 체크포인트 저장 완료")
 
-    for filename in os.listdir(json_folder):
-        if not filename.endswith(".json"):
-            continue
+        if wer_score < best_wer:
+            best_wer = wer_score
+            save_checkpoint(epoch, trainer, best_ckpt_path)
+            logging.info("🏅 Best 모델 갱신 및 저장 완료")
 
-        json_path = os.path.join(json_folder, filename)
-        with open(json_path, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)[0]
-
-        base_name = os.path.splitext(filename)[0]
-        wav_path = os.path.join(wav_dir, base_name + ".wav")
-
-        for sent in metadata["Sentence_info"]:
-            sent_id = sent["ID"]
-            lip_path = os.path.join(npy_dir, f"{base_name}_sentence_{sent_id}.npy")
-            text_path = os.path.join(text_dir, f"{base_name}_sentence_{sent_id}.txt")
-
-            if not os.path.exists(lip_path) or not os.path.exists(text_path):
-                print(f"⚠️ 파일 누락 → 제외: {lip_path}, {text_path}")
-                continue
-
-            data_list.append({
-                "lip_path": lip_path,
-                "text_path": text_path,
-                "audio_path": wav_path,
-                "start_time": float(sent["start_time"]),
-                "end_time": float(sent["end_time"]),
-            })
-
-    return data_list
-
-def crop_lip_all(json_folder, video_folder, save_dir):
-    os.makedirs(save_dir, exist_ok=True)
-    json_files = glob(os.path.join(json_folder, "*.json"))
-    for json_path in json_files:
-        filename = os.path.splitext(os.path.basename(json_path))[0]
-        video_path = os.path.join(video_folder, filename + ".mp4")
-        if os.path.exists(video_path):
-            crop_lip(video_path, json_path, save_dir)
-        else:
-            print(f"❌ 영상 파일 없음: {filename}.mp4")
-
-def save_all_sentence_labels(json_folder, save_dir):
-    os.makedirs(save_dir, exist_ok=True)
-    json_files = glob(os.path.join(json_folder, "*.json"))
-    for json_path in json_files:
-        save_sentence_labels(json_path, save_dir)
-
-def debug_dataloader(train_loader):
-    print("🧪 첫 배치 로딩 시도 중...")
-    try:
-        batch = next(iter(train_loader))
-        print("✅ 첫 배치 로딩 성공")
-    except Exception as e:
-        print(f"❌ 첫 배치 로딩 중 오류 발생: {e}")
+if __name__ == "__main__":
+    main()
