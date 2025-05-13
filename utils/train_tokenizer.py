@@ -25,4 +25,4 @@ def train_tokenizer_from_txt_folder(txt_folder, model_prefix='utils/tokenizer800
 
     print(f"✅ 학습 완료: {model_prefix}.model / {model_prefix}.vocab")
 
-train_tokenizer_from_txt_folder("processed_dataset/text")
+# train_tokenizer_from_txt_folder("processed_dataset/text")
