@@ -74,7 +74,7 @@ def main():
     train_dataset = RandomSentencePairDataset(train_sent, tokenizer, num_pairs_per_epoch=10000)
     val_dataset = FixedSentencePairDataset(val_pairs, tokenizer)
 
-    train_loader = DataLoader(train_dataset, batch_size=3, shuffle=True, num_workers=4, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=3, shuffle=True, num_workers=0, collate_fn=collate_fn)
     val_loader = DataLoader(val_dataset, batch_size=3, shuffle=False, num_workers=4, collate_fn=collate_fn)
 
     visual_encoder = VisualEncoder(
