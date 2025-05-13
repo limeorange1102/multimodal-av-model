@@ -72,3 +72,8 @@ class FixedSentencePairDataset(BaseSentencePairDataset):
     def __getitem__(self, idx):
         s1, s2 = self.pair_list[idx]
         return self._process_pair(s1, s2, self.tokenizer)
+
+def __getitem__(self, idx):
+    s1, s2 = random.sample(self.sentence_list, 2)
+    print(f"🔍 Processing pair: {s1['text_path']} + {s2['text_path']}")
+    return self._process_pair(s1, s2, self.tokenizer)
