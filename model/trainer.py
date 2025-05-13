@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from jiwer import wer
-import logging
 
 class MultimodalTrainer:
     def __init__(self, visual_encoder, audio_encoder, fusion_module,
@@ -35,8 +34,6 @@ class MultimodalTrainer:
         self.optimizer = torch.optim.Adam(self.parameters, lr=learning_rate)
 
     def train_epoch(self, dataloader):
-        logging.info("🚀 train_epoch() 진입!")
-
         self.visual_encoder.train()
         self.audio_encoder.train()
         self.fusion_module.train()
@@ -46,10 +43,7 @@ class MultimodalTrainer:
         self.decoder_visual.train()
 
         total_loss = 0
-        for batch_idx, batch in enumerate(dataloader):
-            if batch_idx % 10 == 0:
-                logging.info(f"🔄 배치 {batch_idx}/{len(dataloader)} 처리 중...")
-
+        for batch in dataloader:
             self.optimizer.zero_grad()
 
             lip1 = batch["lip1"].to(self.device)
@@ -62,14 +56,10 @@ class MultimodalTrainer:
 
             visual_feat1 = self.visual_encoder(lip1)
             visual_feat2 = self.visual_encoder(lip2)
-            logging.info("✅ visual_feat 계산 완료")
-
             audio_feat = self.audio_encoder(audio)
-            logging.info("✅ audio_feat 계산 완료")
 
             fused_feat1 = self.fusion_module(visual_feat1, audio_feat)
             fused_feat2 = self.fusion_module(visual_feat2, audio_feat)
-            logging.info("✅ fused_feat 계산 완료")
 
             B = audio_feat.size(0)
             input_lengths1 = torch.full((B,), fused_feat1.size(1), dtype=torch.long).to(self.device)
