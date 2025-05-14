@@ -169,6 +169,6 @@ class MultimodalTrainer:
         sentence_acc2 = np.mean([ref.strip() == hyp.strip() for ref, hyp in zip(all_refs2, all_hyps2)])
         avg_sentence_acc = (sentence_acc1 + sentence_acc2) / 2
 
-        print(f"✅ Eval Results: WER1={wer1:.3f}, WER2={wer2:.3f}, SentenceAcc={avg_sentence_acc:.3f}")
+        print(f"✅ Eval Results: WER1={wer1:.3f}, WER2={wer2:.3f}, SentenceAcc={avg_sentence_acc:.3f}", flush=True)
 
         return avg_wer, avg_sentence_acc

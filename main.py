@@ -142,7 +142,7 @@ def main():
 
     if os.path.exists(last_ckpt_path):
         logging.info("🔁 기존 체크포인트 불러오는 중...")
-        print("🔁 기존 체크포인트 불러오는 중...")
+        print("🔁 기존 체크포인트 불러오는 중...", flush=True)
         start_epoch = load_checkpoint(trainer, last_ckpt_path)
         logging.info(f"➡️  Epoch {start_epoch}부터 재개")
         print(f"➡️  Epoch {start_epoch}부터 재개", flush=True)
