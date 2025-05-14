@@ -1,165 +1,28 @@
-import torch
-from torch.utils.data import DataLoader
-import os, random, numpy as np
-from sklearn.model_selection import train_test_split
+import os
+from glob import glob
+import sentencepiece as spm
 
-from dataset.multi_speaker_dataset import RandomSentencePairDataset, FixedSentencePairDataset
-from dataset.collate_fn import collate_fn
-from model.encoder import VisualEncoder, AudioEncoder
-from model.fusion_module import CrossAttentionFusion
-from model.decoder import CTCDecoder
-from model.trainer import MultimodalTrainer
-from utils.tokenizer import Tokenizer
-from preprocessing import build_data_list
+def train_tokenizer_from_txt_folder(txt_folder, model_prefix='utils/tokenizer800', vocab_size=1300):
+    # 1. 모든 .txt 파일 경로 수집
+    txt_files = glob(os.path.join(txt_folder, "*.txt"))
+    if len(txt_files) == 0:
+        raise ValueError(f"❌ {txt_folder} 폴더에 .txt 파일이 없습니다!")
 
-import logging
+    print(f"📂 {len(txt_files)}개의 자막 파일에서 토크나이저 학습을 시작합니다...")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+    # 2. 쉼표로 경로 연결
+    input_files = ",".join(txt_files)
 
-def set_seed(seed=42):
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-
-def generate_fixed_pairs(sentence_list, n_pairs=1000):
-    pairs = []
-    indices = list(range(len(sentence_list)))
-    for _ in range(n_pairs):
-        i, j = random.sample(indices, 2)
-        pairs.append((sentence_list[i], sentence_list[j]))
-    return pairs
-
-def save_checkpoint(epoch, trainer, path):
-    torch.save({
-        'epoch': epoch,
-        'visual_encoder': trainer.visual_encoder.state_dict(),
-        'audio_encoder': trainer.audio_encoder.state_dict(),
-        'fusion': trainer.fusion_module.state_dict(),
-        'decoder1': trainer.decoder1.state_dict(),
-        'decoder2': trainer.decoder2.state_dict(),
-        'decoder_audio': trainer.decoder_audio.state_dict(),
-        'decoder_visual': trainer.decoder_visual.state_dict(),
-        'optimizer': trainer.optimizer.state_dict(),
-    }, path)
-
-def load_checkpoint(trainer, path):
-    checkpoint = torch.load(path, map_location=trainer.device)
-    trainer.visual_encoder.load_state_dict(checkpoint['visual_encoder'])
-    trainer.audio_encoder.load_state_dict(checkpoint['audio_encoder'])
-    trainer.fusion_module.load_state_dict(checkpoint['fusion'])
-    trainer.decoder1.load_state_dict(checkpoint['decoder1'])
-    trainer.decoder2.load_state_dict(checkpoint['decoder2'])
-    trainer.decoder_audio.load_state_dict(checkpoint['decoder_audio'])
-    trainer.decoder_visual.load_state_dict(checkpoint['decoder_visual'])
-    trainer.optimizer.load_state_dict(checkpoint['optimizer'])
-    return checkpoint['epoch'] + 1
-
-def main():
-    set_seed()
-
-    logging.info("🔧 데이터 경로 설정 중...")
-    json_folder = "input_texts"
-    npy_dir = "processed_dataset/npy"
-    text_dir = "processed_dataset/text"
-    wav_dir = "input_videos"
-
-    logging.info("📦 Tokenizer 로딩 중...")
-    tokenizer = Tokenizer(vocab_path="utils/tokenizer800.vocab")
-
-    logging.info("📂 데이터 리스트 생성 중...")
-    sentence_list = build_data_list(json_folder, npy_dir, text_dir, wav_dir)
-    logging.info(f"✅ 총 {len(sentence_list)}개의 문장 샘플을 로딩했습니다.")
-
-    logging.info("🔀 train/val 분할 중...")
-    train_sent, val_sent = train_test_split(sentence_list, test_size=0.1, random_state=42)
-    val_pairs = generate_fixed_pairs(val_sent, n_pairs=500)
-
-    logging.info("🧪 Dataset 객체 생성 중...")
-    train_dataset = RandomSentencePairDataset(train_sent, tokenizer, num_pairs_per_epoch=10000)
-    val_dataset = FixedSentencePairDataset(val_pairs, tokenizer)
-
-    logging.info("📤 DataLoader 생성 중...")
-    train_loader = DataLoader(train_dataset, batch_size=3, shuffle=True, num_workers=4, collate_fn=collate_fn)
-    val_loader = DataLoader(val_dataset, batch_size=3, shuffle=False, num_workers=4, collate_fn=collate_fn)
-
-    logging.info("🧠 모델 구성 중...")
-    visual_encoder = VisualEncoder(
-        pretrained_path="weights/Video_only_model.pt",
-        hidden_dim=256,
-        lstm_layers=2,
-        bidirectional=True
+    # 3. SentencePiece tokenizer 학습
+    spm.SentencePieceTrainer.train(
+        input=input_files,
+        model_prefix=model_prefix,
+        vocab_size=vocab_size,
+        model_type='unigram',
+        character_coverage=1.0,
+        user_defined_symbols=['<blank>']
     )
 
-    audio_encoder = AudioEncoder(freeze=False)
+    print(f"✅ 학습 완료: {model_prefix}.model / {model_prefix}.vocab")
 
-    fusion = CrossAttentionFusion(
-        visual_dim=visual_encoder.output_dim,
-        audio_dim=audio_encoder.output_dim,
-        fused_dim=512
-    )
-
-    decoder1 = CTCDecoder(
-        input_dim=512,
-        vocab_size=tokenizer.vocab_size,
-        blank_id=tokenizer.blank_id
-    )
-
-    decoder2 = CTCDecoder(
-        input_dim=512,
-        vocab_size=tokenizer.vocab_size,
-        blank_id=tokenizer.blank_id
-    )
-
-    decoder_audio = CTCDecoder(
-        input_dim=audio_encoder.output_dim,
-        vocab_size=tokenizer.vocab_size,
-        blank_id=tokenizer.blank_id
-    )
-
-    decoder_visual = CTCDecoder(
-        input_dim=visual_encoder.output_dim,
-        vocab_size=tokenizer.vocab_size,
-        blank_id=tokenizer.blank_id
-    )
-
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    trainer = MultimodalTrainer(
-        visual_encoder, audio_encoder, fusion,
-        decoder1, decoder2, decoder_audio, decoder_visual,
-        tokenizer,
-        learning_rate=1e-4,
-        device=device
-    )
-
-    os.makedirs("checkpoints", exist_ok=True)
-    last_ckpt_path = "checkpoints/last_checkpoint.pt"
-    best_ckpt_path = "checkpoints/best_checkpoint.pt"
-    start_epoch = 1
-    best_wer = 1.0
-
-    if os.path.exists(last_ckpt_path):
-        logging.info("🔁 기존 체크포인트 불러오는 중...")
-        start_epoch = load_checkpoint(trainer, last_ckpt_path)
-        logging.info(f"➡️  Epoch {start_epoch}부터 재개")
-
-    for epoch in range(start_epoch, 21):
-        logging.info(f"\n📚 Epoch {epoch}/20")
-        loss = trainer.train_epoch(train_loader)
-
-        wer_score = trainer.evaluate(val_loader)
-
-        save_checkpoint(epoch, trainer, last_ckpt_path)
-        logging.info("💾 마지막 체크포인트 저장 완료")
-
-        if wer_score < best_wer:
-            best_wer = wer_score
-            save_checkpoint(epoch, trainer, best_ckpt_path)
-            logging.info("🏅 Best 모델 갱신 및 저장 완료")
-
-if __name__ == "__main__":
-    main()
+# train_tokenizer_from_txt_folder("processed_dataset/text")
