@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from jiwer import wer
 from tqdm import tqdm
+import numpy as np
 
 class MultimodalTrainer:
     def __init__(self, visual_encoder, audio_encoder, fusion_module,
@@ -157,6 +158,17 @@ class MultimodalTrainer:
                     all_hyps2.append(hyp)
                     all_refs2.append(ref)
 
+        
+        # 기존 WER
         wer1 = wer(all_refs1, all_hyps1)
         wer2 = wer(all_refs2, all_hyps2)
-        return (wer1 + wer2) / 2
+        avg_wer = (wer1 + wer2) / 2
+
+        # 추가: 정확히 문장이 일치한 비율
+        sentence_acc1 = np.mean([ref.strip() == hyp.strip() for ref, hyp in zip(all_refs1, all_hyps1)])
+        sentence_acc2 = np.mean([ref.strip() == hyp.strip() for ref, hyp in zip(all_refs2, all_hyps2)])
+        avg_sentence_acc = (sentence_acc1 + sentence_acc2) / 2
+
+        print(f"✅ Eval Results: WER1={wer1:.3f}, WER2={wer2:.3f}, SentenceAcc={avg_sentence_acc:.3f}")
+
+        return avg_wer, avg_sentence_acc

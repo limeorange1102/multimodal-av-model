@@ -16,8 +16,10 @@ class Tokenizer:
         return [self.token_to_id.get(ch, self.unk_id) for ch in text]
 
     def decode(self, ids):
-        return ''.join([self.id_to_token[i] for i in ids if i < len(self.id_to_token)])
-
+        tokens = [self.id_to_token[i] for i in ids if i < len(self.id_to_token)]
+        sentence = ''.join(tokens).replace('▁', ' ').strip()
+        return sentence
+    
     @property
     def vocab_size(self):
         return len(self.id_to_token)

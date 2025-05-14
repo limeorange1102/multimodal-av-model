@@ -133,6 +133,7 @@ def main():
     last_ckpt_path = os.path.join(drive_ckpt_dir, "last_checkpoint.pt")
     best_ckpt_path = os.path.join(drive_ckpt_dir, "best_checkpoint.pt")
     wer_log_path = os.path.join(drive_ckpt_dir, "wer_log.csv")
+    sentence_acc_log_path = os.path.join(drive_ckpt_dir, "sentence_acc_log.csv")
     loss_log_path = os.path.join(drive_ckpt_dir, "loss_log.csv")
     start_epoch = 1
     best_wer = 1.0
@@ -151,6 +152,8 @@ def main():
         f.write("epoch,wer\n")
     with open(loss_log_path, "w") as f:
         f.write("epoch,loss\n")
+    with open(sentence_acc_log_path, "w", encoding="utf-8") as f:
+        f.write("epoch,sentence_acc\n")
 
     print("▶️ for epoch 진입", flush=True)
     for epoch in range(start_epoch, 21):
@@ -159,13 +162,15 @@ def main():
         loss = trainer.train_epoch(train_loader)
         loss_history.append(loss)
 
-        wer_score = trainer.evaluate(val_loader)
+        wer_score, sentence_acc = trainer.evaluate(val_loader)
         wer_history.append(wer_score)
 
         with open(wer_log_path, "a") as f:
             f.write(f"{epoch},{wer_score:.4f}\n")
         with open(loss_log_path, "a") as f:
             f.write(f"{epoch},{loss:.4f}\n")
+        with open(sentence_acc_log_path, "a", encoding="utf-8") as f:
+            f.write(f"{epoch},{sentence_acc:.4f}\n")
 
         save_checkpoint(epoch, trainer, last_ckpt_path)
         logging.info("💾 마지막 체크포인트 저장 완료")
