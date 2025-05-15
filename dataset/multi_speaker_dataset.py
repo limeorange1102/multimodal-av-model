@@ -80,8 +80,8 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
     def __getitem__(self, idx):
         s1, s2 = self.pair_list[idx]
 
-        a1 = np.load(s1["audio_path"])
-        a2 = np.load(s2["audio_path"])
+        a1 = np.load(s1["audio_path"], allow_pickle=True)
+        a2 = np.load(s2["audio_path"], allow_pickle=True)
 
         max_len = max(len(a1), len(a2))
         if len(a1) < max_len:
@@ -92,8 +92,8 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
         mix = a1 + a2
         mix = mix / (np.max(np.abs(mix)) + 1e-6)
 
-        lip1 = np.load(s1["lip_path"])
-        lip2 = np.load(s2["lip_path"])
+        lip1 = np.load(s1["lip_path"], allow_pickle=True)
+        lip2 = np.load(s2["lip_path"], allow_pickle=True)
 
         with open(s1["text_path"], "r", encoding="utf-8") as f:
             label1 = self.tokenizer.encode(f.read().strip())
