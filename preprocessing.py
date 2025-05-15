@@ -6,7 +6,6 @@ from tqdm import tqdm
 from glob import glob
 import mediapipe as mp
 
-
 def crop_lip(video_path, output_path, frame_indices):
     mp_face_mesh = mp.solutions.face_mesh
     face_mesh = mp_face_mesh.FaceMesh(static_image_mode=True)
@@ -34,10 +33,7 @@ def crop_lip(video_path, output_path, frame_indices):
             print(f"⚠️ No face detected in frame {frame_idx} of {video_path}")
             continue
 
-        # 첫 번째 얼굴만 사용
         landmarks = results.multi_face_landmarks[0]
-
-        # 입술 주변 랜드마크 (예: 61~88번)
         lip_points = [
             (int(lm.x * w), int(lm.y * h))
             for i, lm in enumerate(landmarks.landmark)
@@ -63,17 +59,15 @@ def crop_lip(video_path, output_path, frame_indices):
     cap.release()
 
     if len(crops) > 0:
-        crops = np.stack(crops, axis=0)  # shape: [T, 128, 128, 3]
+        crops = np.stack(crops, axis=0)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         np.save(output_path, crops)
         print(f"✅ Saved crop: {output_path} ({crops.shape[0]} frames)")
     else:
         print(f"❌ No valid crops found for {video_path}, skipping.")
 
-
 def save_sentence_labels(json_path, save_dir):
     os.makedirs(save_dir, exist_ok=True)
-
     with open(json_path, 'r', encoding='utf-8') as f:
         metadata = json.load(f)[0]
 
@@ -83,7 +77,6 @@ def save_sentence_labels(json_path, save_dir):
     for sentence in sentence_info:
         sent_id = sentence["ID"]
         text = sentence["sentence_text"].strip()
-
         save_path = os.path.join(save_dir, f"{video_filename}_sentence_{sent_id}.txt")
         with open(save_path, 'w', encoding='utf-8') as f_out:
             f_out.write(text + "\n")
@@ -92,7 +85,6 @@ def save_sentence_labels(json_path, save_dir):
 
 def build_data_list(json_folder, npy_dir, text_dir, wav_dir):
     data_list = []
-
     for filename in os.listdir(json_folder):
         if not filename.endswith(".json"):
             continue
@@ -129,27 +121,22 @@ def crop_lip_all(json_folder, video_folder, save_dir):
     for json_path in json_files:
         filename = os.path.splitext(os.path.basename(json_path))[0]
         video_path = os.path.join(video_folder, filename + ".mp4")
-        if os.path.exists(video_path):
-            crop_lip(video_path, json_path, save_dir)
-        else:
-            print(f"❌ 영상 파일 없음: {filename}.mp4")
 
-def save_all_sentence_labels(json_folder, save_dir):
-    os.makedirs(save_dir, exist_ok=True)
-    json_files = glob(os.path.join(json_folder, "*.json"))
-    for json_path in json_files:
-        save_sentence_labels(json_path, save_dir)
-
-def crop_lip_all(json_folder, video_folder, save_dir):
-    os.makedirs(save_dir, exist_ok=True)
-    json_files = glob(os.path.join(json_folder, "*.json"))
-    for json_path in json_files:
-        filename = os.path.splitext(os.path.basename(json_path))[0]
-        video_path = os.path.join(video_folder, filename + ".mp4")
-        if os.path.exists(video_path):
-            crop_lip(video_path, json_path, save_dir)
-        else:
+        if not os.path.exists(video_path):
             print(f"❌ 영상 파일 없음: {filename}.mp4")
+            continue
+
+        with open(json_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)[0]
+
+        for sentence in metadata["Sentence_info"]:
+            sent_id = sentence["ID"]
+            start_frame = int(sentence["start_frame"])
+            end_frame = int(sentence["end_frame"])
+            frame_indices = list(range(start_frame, end_frame + 1))
+
+            output_path = os.path.join(save_dir, f"{filename}_sentence_{sent_id}.npy")
+            crop_lip(video_path, output_path, frame_indices)
 
 def save_all_sentence_labels(json_folder, save_dir):
     os.makedirs(save_dir, exist_ok=True)
@@ -161,6 +148,6 @@ video_folder = "input_videos"
 json_folder = "input_texts"
 npy_dir = "processed_dataset/npy"
 text_dir = "processed_dataset/text"
-wav_dir = "input_videos"    
+wav_dir = "input_videos"
 
 crop_lip_all(json_folder, video_folder, npy_dir)
