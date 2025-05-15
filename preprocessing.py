@@ -193,7 +193,7 @@ def save_all_sentence_labels(json_folder, save_dir):
         save_sentence_labels(json_path, save_dir)
 
 video_folder = "input_videos"
-json_folder = "input_texts2"
+json_folder = "input_texts1"
 npy_dir = "processed_dataset/npy"
 text_dir = "processed_dataset/text"
 wav_dir = "input_videos"    
