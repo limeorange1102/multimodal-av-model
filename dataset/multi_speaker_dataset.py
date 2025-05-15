@@ -15,8 +15,10 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         s1, s2 = random.sample(self.sentence_list, 2)
 
         # Load waveforms (1D np.array)
-        a1 = librosa.load(s1["audio_path"])
-        a2 = librosa.load(s2["audio_path"])
+        a1, _ = librosa.load(s1["audio_path"], sr=None)
+        a2, _ = librosa.load(s2["audio_path"], sr=None)        
+        a1 = np.asarray(a1).flatten()
+        a2 = np.asarray(a2).flatten()
 
         # 🔄 두 화자의 오디오 길이 맞추기
         max_len = max(len(a1), len(a2))
@@ -27,6 +29,7 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
 
         # 혼합 오디오 생성
         mix = a1 + a2
+        mix = mix.astype(np.float32)
         mix = mix / (np.max(np.abs(mix)) + 1e-6)  # 정규화
 
         # Load lips
@@ -75,8 +78,10 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
     def __getitem__(self, idx):
         s1, s2 = self.pair_list[idx]
 
-        a1 = librosa.load(s1["audio_path"])
-        a2 = librosa.load(s2["audio_path"])
+        a1, _ = librosa.load(s1["audio_path"], sr=None)
+        a2, _ = librosa.load(s2["audio_path"], sr=None)
+        a1 = np.asarray(a1).flatten()
+        a2 = np.asarray(a2).flatten()
 
         max_len = max(len(a1), len(a2))
         if len(a1) < max_len:
@@ -85,6 +90,7 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
             a2 = np.pad(a2, (0, max_len - len(a2)), mode="constant")
 
         mix = a1 + a2
+        mix = mix.astype(np.float32)
         mix = mix / (np.max(np.abs(mix)) + 1e-6)
 
         lip1 = librosa.load(s1["lip_path"])
