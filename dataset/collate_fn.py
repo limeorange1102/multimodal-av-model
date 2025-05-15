@@ -30,8 +30,8 @@ def collate_fn(batch, pad_id=0):
     text2_padded = pad_sequence(text2_seqs, batch_first=True, padding_value=pad_id)
 
     # 오디오 (waveform 기준)
-    audio_seqs = [item["audio"] for item in batch]  # list of [T]
-    audio_lengths = [seq.size[0] for seq in audio_seqs]
+    audio_seqs = [torch.tensor(item["audio"]) for item in batch]  # list of [T]
+    audio_lengths = [seq.shape[0] for seq in audio_seqs]
     audio_padded = pad_sequence(audio_seqs, batch_first=True)  # [B, T]
 
     attention_mask = torch.zeros_like(audio_padded, dtype=torch.bool)
