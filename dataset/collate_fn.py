@@ -13,8 +13,8 @@ def collate_fn(batch, pad_id=0):
     """
 
     # 입술 영상
-    lip1_seqs = [item["lip1"] for item in batch]
-    lip2_seqs = [item["lip2"] for item in batch]
+    lip1_seqs = [torch.tensor(item["lip1"]) for item in batch]
+    lip2_seqs = [torch.tensor(item["lip2"]) for item in batch]
     lip1_lengths = [seq.shape[0] for seq in lip1_seqs]
     lip2_lengths = [seq.shape[0] for seq in lip2_seqs]
     lip1_padded = pad_sequence(lip1_seqs, batch_first=True)
