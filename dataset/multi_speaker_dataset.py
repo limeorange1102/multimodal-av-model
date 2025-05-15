@@ -15,8 +15,12 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         s1, s2 = random.sample(self.sentence_list, 2)
 
         # Load waveforms (1D np.array)
-        a1, _ = librosa.load(s1["audio_path"], sr=None)
-        a2, _ = librosa.load(s2["audio_path"], sr=None)        
+        a1, sr1 = librosa.load(s1["audio_path"], sr=None)
+        a2, sr2 = librosa.load(s2["audio_path"], sr=None)
+
+        # 🎯 sr mismatch 확인
+        assert sr1 == sr2, f"[오류] Sampling rates do not match! sr1={sr1}, sr2={sr2}" 
+
         a1 = np.asarray(a1).flatten()
         a2 = np.asarray(a2).flatten()
 
@@ -33,8 +37,8 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         mix = mix / (np.max(np.abs(mix)) + 1e-6)  # 정규화
 
         # Load lips
-        lip1 = librosa.load(s1["lip_path"])  # (T1, 27, 2)
-        lip2 = librosa.load(s2["lip_path"])  # (T2, 27, 2)
+        lip1 = np.load(s1["lip_path"])  # (T1, 27, 2)
+        lip2 = np.load(s2["lip_path"])  # (T2, 27, 2)
 
         # Load labels
         with open(s1["text_path"], "r", encoding="utf-8") as f:
@@ -78,8 +82,11 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
     def __getitem__(self, idx):
         s1, s2 = self.pair_list[idx]
 
-        a1, _ = librosa.load(s1["audio_path"], sr=None)
-        a2, _ = librosa.load(s2["audio_path"], sr=None)
+        a1, sr1 = librosa.load(s1["audio_path"], sr=None)
+        a2, sr2 = librosa.load(s2["audio_path"], sr=None)
+
+        # 🎯 sr mismatch 확인
+        assert sr1 == sr2, f"[오류] Sampling rates do not match! sr1={sr1}, sr2={sr2}"
         a1 = np.asarray(a1).flatten()
         a2 = np.asarray(a2).flatten()
 
@@ -93,8 +100,8 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
         mix = mix.astype(np.float32)
         mix = mix / (np.max(np.abs(mix)) + 1e-6)
 
-        lip1 = librosa.load(s1["lip_path"])
-        lip2 = librosa.load(s2["lip_path"])
+        lip1 = np.load(s1["lip_path"])
+        lip2 = np.load(s2["lip_path"])
 
         with open(s1["text_path"], "r", encoding="utf-8") as f:
             label1 = self.tokenizer.encode(f.read().strip())
