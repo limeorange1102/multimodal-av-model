@@ -7,7 +7,7 @@ from transformers import Wav2Vec2Model
 # 📌 영상 인코더: VisualEncoder
 # -------------------------------
 class VisualEncoder(nn.Module):
-    def __init__(self, pretrained_path=None, hidden_dim=256, lstm_layers=2, bidirectional=True):
+    def __init__(self, pretrained_path=None, hidden_dim=128, lstm_layers=2, bidirectional=True):
         super().__init__()
 
         self.resnet = models.resnet34(weights=None)
