@@ -2,7 +2,7 @@ import random
 import torch
 import numpy as np
 import librosa
-
+import cv2
 class MultiSpeakerDataset(torch.utils.data.Dataset):
     def __init__(self, sentence_list, tokenizer):
         self.sentence_list = sentence_list
@@ -39,6 +39,9 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         # Load lips
         lip1 = np.load(s1["lip_path"])  # (T1, 27, 2)
         lip2 = np.load(s2["lip_path"])  # (T2, 27, 2)
+        #(128x128)->(64x64)로 resize
+        lip1 = np.stack([cv2.resize(frame, (64, 64)) for frame in lip1])
+        lip2 = np.stack([cv2.resize(frame, (64, 64)) for frame in lip2])
 
         # Load labels
         with open(s1["text_path"], "r", encoding="utf-8") as f:
@@ -102,6 +105,9 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
 
         lip1 = np.load(s1["lip_path"])
         lip2 = np.load(s2["lip_path"])
+        #(128x128)->(64x64)로 resize
+        lip1 = np.stack([cv2.resize(frame, (64, 64)) for frame in lip1])
+        lip2 = np.stack([cv2.resize(frame, (64, 64)) for frame in lip2])
 
         with open(s1["text_path"], "r", encoding="utf-8") as f:
             label1 = self.tokenizer.encode(f.read().strip())
