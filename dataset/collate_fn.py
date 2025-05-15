@@ -15,8 +15,8 @@ def collate_fn(batch, pad_id=0):
     # 입술 영상
     lip1_seqs = [item["lip1"] for item in batch]
     lip2_seqs = [item["lip2"] for item in batch]
-    lip1_lengths = [seq.size(0) for seq in lip1_seqs]
-    lip2_lengths = [seq.size(0) for seq in lip2_seqs]
+    lip1_lengths = [seq.shape[0] for seq in lip1_seqs]
+    lip2_lengths = [seq.shape[0] for seq in lip2_seqs]
     lip1_padded = pad_sequence(lip1_seqs, batch_first=True)
     lip2_padded = pad_sequence(lip2_seqs, batch_first=True)
 
@@ -30,7 +30,7 @@ def collate_fn(batch, pad_id=0):
 
     # 오디오 (waveform 기준)
     audio_seqs = [item["audio"] for item in batch]  # list of [T]
-    audio_lengths = [seq.size(0) for seq in audio_seqs]
+    audio_lengths = [seq.size[0] for seq in audio_seqs]
     audio_padded = pad_sequence(audio_seqs, batch_first=True)  # [B, T]
 
     attention_mask = torch.zeros_like(audio_padded, dtype=torch.bool)
