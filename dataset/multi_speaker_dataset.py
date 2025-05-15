@@ -20,8 +20,8 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         s1, s2 = random.sample(self.sentence_list, 2)
 
         # Load waveforms (1D np.array)
-        a1 = np.load(s1["audio_path"])
-        a2 = np.load(s2["audio_path"])
+        a1 = np.load(s1["audio_path"], allow_pickle=True)
+        a2 = np.load(s2["audio_path"], allow_pickle=True)
 
         # 🔄 두 화자의 오디오 길이 맞추기
         max_len = max(len(a1), len(a2))
@@ -35,8 +35,8 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         mix = mix / (np.max(np.abs(mix)) + 1e-6)  # 정규화
 
         # Load lips
-        lip1 = np.load(s1["lip_path"])  # (T1, 27, 2)
-        lip2 = np.load(s2["lip_path"])  # (T2, 27, 2)
+        lip1 = np.load(s1["lip_path"], allow_pickle=True)  # (T1, 27, 2)
+        lip2 = np.load(s2["lip_path"], allow_pickle=True)  # (T2, 27, 2)
 
         # Load labels
         with open(s1["text_path"], "r", encoding="utf-8") as f:
