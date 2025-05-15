@@ -35,6 +35,14 @@ class MultimodalTrainer:
 
         self.optimizer = torch.optim.Adam(self.parameters, lr=learning_rate)
 
+    def crop_or_pad_feat(self, feat, target_len):
+        if feat.size(0) >= target_len:
+            return feat[:target_len]
+        else:
+            pad_len = target_len - feat.size(0)
+            pad = torch.zeros(pad_len, feat.size(1), device=feat.device)
+            return torch.cat([feat, pad], dim=0)
+
     def train_epoch(self, dataloader):
         print("✅ train_epoch() 짱입")
 
@@ -59,20 +67,35 @@ class MultimodalTrainer:
                 text2 = batch["text2"].to(self.device)
                 len1 = batch["text1_lengths"].to(self.device)
                 len2 = batch["text2_lengths"].to(self.device)
+                lip1_lengths = batch["lip1_lengths"].to(self.device)
+                lip2_lengths = batch["lip2_lengths"].to(self.device)
 
                 visual_feat1 = self.visual_encoder(lip1)
                 visual_feat2 = self.visual_encoder(lip2)
                 audio_feat = self.audio_encoder(audio, attention_mask=audio_mask)
 
-                fused_feat1 = self.fusion_module(visual_feat1, audio_feat)
-                fused_feat2 = self.fusion_module(visual_feat2, audio_feat)
+                audio_visual_time_ratio = 2
+                max_len1 = (lip1_lengths * audio_visual_time_ratio).max()
+                max_len2 = (lip2_lengths * audio_visual_time_ratio).max()
 
-                B = audio_feat.size(0)
-                input_lengths1 = torch.full((B,), fused_feat1.size(1), dtype=torch.long).to(self.device)
-                input_lengths2 = torch.full((B,), fused_feat2.size(1), dtype=torch.long).to(self.device)
-                input_lengths_audio = torch.full((B,), audio_feat.size(1), dtype=torch.long).to(self.device)
-                input_lengths_visual1 = torch.full((B,), visual_feat1.size(1), dtype=torch.long).to(self.device)
-                input_lengths_visual2 = torch.full((B,), visual_feat2.size(1), dtype=torch.long).to(self.device)
+                audio_feat1 = torch.stack([
+                    self.crop_or_pad_feat(audio_feat[i], max_len1)
+                    for i in range(audio_feat.size(0))
+                ])
+                audio_feat2 = torch.stack([
+                    self.crop_or_pad_feat(audio_feat[i], max_len2)
+                    for i in range(audio_feat.size(0))
+                ])
+
+                fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
+                fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
+
+                input_lengths1 = (lip1_lengths * audio_visual_time_ratio).to(torch.long)
+                input_lengths2 = (lip2_lengths * audio_visual_time_ratio).to(torch.long)
+
+                input_lengths_audio = torch.full((audio_feat.size(0),), audio_feat.size(1), dtype=torch.long).to(self.device)
+                input_lengths_visual1 = torch.full((visual_feat1.size(0),), visual_feat1.size(1), dtype=torch.long).to(self.device)
+                input_lengths_visual2 = torch.full((visual_feat2.size(0),), visual_feat2.size(1), dtype=torch.long).to(self.device)
 
                 log_probs1 = self.decoder1(fused_feat1)
                 log_probs2 = self.decoder2(fused_feat2)
@@ -91,7 +114,6 @@ class MultimodalTrainer:
                 self.optimizer.step()
                 total_loss += loss.item()
 
-                # 🔍 예측 결과 확인
                 if batch_idx % 100 == 0:
                     pred_ids = torch.argmax(log_probs1[0], dim=-1).cpu().tolist()
                     unique_ids = sorted(set(pred_ids))
@@ -151,13 +173,28 @@ class MultimodalTrainer:
                 text2 = batch["text2"].to(self.device)
                 len1 = batch["text1_lengths"].to(self.device)
                 len2 = batch["text2_lengths"].to(self.device)
+                lip1_lengths = batch["lip1_lengths"].to(self.device)
+                lip2_lengths = batch["lip2_lengths"].to(self.device)
 
+                audio_feat = self.audio_encoder(audio, attention_mask=audio_mask)
                 visual_feat1 = self.visual_encoder(lip1)
                 visual_feat2 = self.visual_encoder(lip2)
-                audio_feat = self.audio_encoder(audio, attention_mask=audio_mask)
 
-                fused_feat1 = self.fusion_module(visual_feat1, audio_feat)
-                fused_feat2 = self.fusion_module(visual_feat2, audio_feat)
+                audio_visual_time_ratio = 2
+                max_len1 = (lip1_lengths * audio_visual_time_ratio).max()
+                max_len2 = (lip2_lengths * audio_visual_time_ratio).max()
+
+                audio_feat1 = torch.stack([
+                    self.crop_or_pad_feat(audio_feat[i], max_len1)
+                    for i in range(audio_feat.size(0))
+                ])
+                audio_feat2 = torch.stack([
+                    self.crop_or_pad_feat(audio_feat[i], max_len2)
+                    for i in range(audio_feat.size(0))
+                ])
+
+                fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
+                fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
 
                 log_probs1 = self.decoder1(fused_feat1)
                 log_probs2 = self.decoder2(fused_feat2)
@@ -165,30 +202,27 @@ class MultimodalTrainer:
                 pred1 = torch.argmax(log_probs1, dim=-1).cpu().numpy()
                 pred2 = torch.argmax(log_probs2, dim=-1).cpu().numpy()
 
-                input_lengths1 = fused_feat1.size(1)
-                input_lengths2 = fused_feat2.size(1)
+                input_lengths1 = (lip1_lengths * audio_visual_time_ratio).to(torch.long)
+                input_lengths2 = (lip2_lengths * audio_visual_time_ratio).to(torch.long)
 
                 for i in range(len(pred1)):
-                    p_ids = self.ctc_decode(pred1[i][:input_lengths1])
+                    p_ids = self.ctc_decode(pred1[i][:input_lengths1[i]])
                     ref = self.tokenizer.decode(text1[i][:len1[i]].cpu().numpy())
                     hyp = self.tokenizer.decode(p_ids)
                     all_hyps1.append(hyp)
                     all_refs1.append(ref)
 
                 for i in range(len(pred2)):
-                    p_ids = self.ctc_decode(pred2[i][:input_lengths2])
+                    p_ids = self.ctc_decode(pred2[i][:input_lengths2[i]])
                     ref = self.tokenizer.decode(text2[i][:len2[i]].cpu().numpy())
                     hyp = self.tokenizer.decode(p_ids)
                     all_hyps2.append(hyp)
                     all_refs2.append(ref)
 
-        
-        # 기존 WER
         wer1 = wer(all_refs1, all_hyps1)
         wer2 = wer(all_refs2, all_hyps2)
         avg_wer = (wer1 + wer2) / 2
 
-        # 추가: 정확히 문장이 일치한 비율
         sentence_acc1 = np.mean([ref.strip() == hyp.strip() for ref, hyp in zip(all_refs1, all_hyps1)])
         sentence_acc2 = np.mean([ref.strip() == hyp.strip() for ref, hyp in zip(all_refs2, all_hyps2)])
         avg_sentence_acc = (sentence_acc1 + sentence_acc2) / 2

@@ -7,45 +7,57 @@ from torch.utils.data import Dataset
 import torchaudio.transforms as T
 
 
-class BaseSentencePairDataset(Dataset):
-    def __init__(self, sr=16000):
-        self.sr = sr
+class MultiSpeakerDataset(torch.utils.data.Dataset):
+    def __init__(self, sentence_list, tokenizer):
+        self.sentence_list = sentence_list
+        self.tokenizer = tokenizer
 
-    def _process_pair(self, s1, s2, tokenizer):
-        # 입술 영상 로딩
-        lip1 = torch.from_numpy(np.load(s1["lip_path"])).permute(0, 3, 1, 2).float() / 255.0
-        lip2 = torch.from_numpy(np.load(s2["lip_path"])).permute(0, 3, 1, 2).float() / 255.0
+    def __len__(self):
+        return len(self.sentence_list)
 
-        # 텍스트 로딩 및 토크나이징
-        with open(s1["text_path"], 'r', encoding='utf-8') as f:
-            label1 = tokenizer.encode(f.read().strip()) 
-        with open(s2["text_path"], 'r', encoding='utf-8') as f:
-            label2 = tokenizer.encode(f.read().strip())
-        label1 = torch.tensor(label1, dtype=torch.long)
-        label2 = torch.tensor(label2, dtype=torch.long)
+    def __getitem__(self, idx):
+        import random
+        s1, s2 = random.sample(self.sentence_list, 2)
 
-        # 오디오 로딩 및 혼합
-        dur1 = s1["end_time"] - s1["start_time"]
-        dur2 = s2["end_time"] - s2["start_time"]
-        a1, _ = librosa.load(s1["audio_path"], sr=self.sr, offset=s1["start_time"], duration=dur1)
-        a2, _ = librosa.load(s2["audio_path"], sr=self.sr, offset=s2["start_time"], duration=dur2)
+        # Load waveforms (1D np.array)
+        a1 = np.load(s1["audio_path"])
+        a2 = np.load(s2["audio_path"])
 
-        min_len = min(len(a1), len(a2))
-        mix = a1[:min_len] + a2[:min_len]
-        mix = mix / (np.max(np.abs(mix)) + 1e-6)
+        # 🔄 두 화자의 오디오 길이 맞추기
+        max_len = max(len(a1), len(a2))
+        if len(a1) < max_len:
+            a1 = np.pad(a1, (0, max_len - len(a1)), mode="constant")
+        if len(a2) < max_len:
+            a2 = np.pad(a2, (0, max_len - len(a2)), mode="constant")
 
-        mix_tensor = torch.from_numpy(mix).float().unsqueeze(0)  # [1, T]
+        # 혼합 오디오 생성
+        mix = a1 + a2
+        mix = mix / (np.max(np.abs(mix)) + 1e-6)  # 정규화
+
+        # Load lips
+        lip1 = np.load(s1["lip_path"])  # (T1, 27, 2)
+        lip2 = np.load(s2["lip_path"])  # (T2, 27, 2)
+
+        # Load labels
+        with open(s1["text_path"], "r", encoding="utf-8") as f:
+            label1 = self.tokenizer.encode(f.read().strip())
+        with open(s2["text_path"], "r", encoding="utf-8") as f:
+            label2 = self.tokenizer.encode(f.read().strip())
 
         return {
-            "lip1": lip1,
-            "lip2": lip2,
-            "text1": label1,
-            "text2": label2,
-            "audio": torch.tensor(mix[:min_len], dtype=torch.float)  # raw waveform
+            "audio": mix.astype(np.float32),
+            "audio1_raw": a1.astype(np.float32),
+            "audio2_raw": a2.astype(np.float32),
+            "lip1": lip1.astype(np.float32),
+            "lip2": lip2.astype(np.float32),
+            "label1": np.array(label1, dtype=np.int64),
+            "label2": np.array(label2, dtype=np.int64),
+            "lip1_len": lip1.shape[0],
+            "lip2_len": lip2.shape[0],
         }
 
 
-class RandomSentencePairDataset(BaseSentencePairDataset):
+class RandomSentencePairDataset(MultiSpeakerDataset):
     def __init__(self, sentence_list, tokenizer, sr=16000, num_pairs_per_epoch=10000):
         super().__init__(sr)
         self.sentence_list = sentence_list
@@ -60,7 +72,7 @@ class RandomSentencePairDataset(BaseSentencePairDataset):
         return self._process_pair(s1, s2, self.tokenizer)
 
 
-class FixedSentencePairDataset(BaseSentencePairDataset):
+class FixedSentencePairDataset(MultiSpeakerDataset):
     def __init__(self, pair_list, tokenizer, sr=16000):
         super().__init__(sr)
         self.pair_list = pair_list
@@ -72,8 +84,3 @@ class FixedSentencePairDataset(BaseSentencePairDataset):
     def __getitem__(self, idx):
         s1, s2 = self.pair_list[idx]
         return self._process_pair(s1, s2, self.tokenizer)
-
-def __getitem__(self, idx):
-    s1, s2 = random.sample(self.sentence_list, 2)
-    print(f"🔍 Processing pair: {s1['text_path']} + {s2['text_path']}")
-    return self._process_pair(s1, s2, self.tokenizer)
