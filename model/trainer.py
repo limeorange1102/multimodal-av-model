@@ -40,7 +40,7 @@ class MultimodalTrainer:
             return feat[:target_len]
         else:
             pad_len = target_len - feat.size(0)
-            pad = torch.zeros(pad_len, feat.size(1), device=feat.device)
+            pad = torch.zeros(pad_len, feat.size(1), device=feat.device, dtype=feat.dtype)
             return torch.cat([feat, pad], dim=0)
 
     def train_epoch(self, dataloader):
