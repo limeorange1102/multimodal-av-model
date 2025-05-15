@@ -90,8 +90,28 @@ class MultimodalTrainer:
                 loss.backward()
                 self.optimizer.step()
                 total_loss += loss.item()
+
+                # 🔍 예측 결과 확인
+                if batch_idx % 100 == 0:
+                    print(f"\n🔎 [Batch {batch_idx}] 예측 결과 확인", flush = True)
+                    with torch.no_grad():
+                        pred1_ids = torch.argmax(log_probs1, dim=-1)
+                        pred2_ids = torch.argmax(log_probs2, dim=-1)
+
+                        for i in range(min(2, pred1_ids.size(0))):
+                            pred_ids1 = self.ctc_decode(pred1_ids[i].cpu().tolist())
+                            decoded1 = self.tokenizer.decode(pred_ids1)
+                            true1 = self.tokenizer.decode(text1[i][:len1[i]].cpu().tolist())
+                            print(f"[화자1 예측] {decoded1}", flush=True)
+                            print(f"[화자1 정답] {true1}", flush=True)
+
+                            pred_ids2 = self.ctc_decode(pred2_ids[i].cpu().tolist())
+                            decoded2 = self.tokenizer.decode(pred_ids2)
+                            true2 = self.tokenizer.decode(text2[i][:len2[i]].cpu().tolist())
+                            print(f"[화자2 예측] {decoded2}", flush=True)
+                            print(f"[화자2 정답] {true2}", flush=True)
             except Exception as e:
-                print(f"❌ Error at batch {batch_idx}: {e}")
+                print(f"❌ Error at batch {batch_idx}: {e}", flush=True)
                 continue
 
         return total_loss / len(dataloader)
