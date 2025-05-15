@@ -6,68 +6,84 @@ from tqdm import tqdm
 from glob import glob
 import mediapipe as mp
 
-def crop_lip(video_path, output_path, frame_indices):
-    mp_face_mesh = mp.solutions.face_mesh
-    face_mesh = mp_face_mesh.FaceMesh(static_image_mode=True)
+def crop_lip_with_mediapipe(video_path, json_path, save_dir, resize=(128, 128), fps=30):
+    os.makedirs(save_dir, exist_ok=True)
 
+    with open(json_path, 'r', encoding='utf-8') as f:
+        metadata = json.load(f)[0]
+
+    sentence_info = metadata["Sentence_info"]
+    video_filename = os.path.splitext(os.path.basename(video_path))[0]
     cap = cv2.VideoCapture(video_path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 
-    crops = []
-    for frame_idx in frame_indices:
-        if frame_idx >= total_frames:
-            print(f"⚠️ frame {frame_idx} out of bounds for {video_path}")
+    mp_face_mesh = mp.solutions.face_mesh
+    face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True)
+
+    skipped_count = 0
+
+    for sentence in tqdm(sentence_info, desc=f"Processing {video_filename}"):
+        sent_id = sentence["ID"]
+        start_frame = int(sentence["start_time"] * fps)
+        end_frame = int(sentence["end_time"] * fps)
+
+        frames = []
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        invalid = False
+
+        for frame_idx in range(start_frame, end_frame):
+            success, frame = cap.read()
+            if not success or frame is None:
+                print(f"⚠️ frame 읽기 실패: frame {frame_idx} (영상: {video_filename})")
+                invalid = True
+                break
+
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = face_mesh.process(rgb)
+
+            if not results.multi_face_landmarks:
+                print(f"⚠️ 얼굴 인식 실패: frame {frame_idx}")
+                invalid = True
+                break
+
+            landmarks = results.multi_face_landmarks[0].landmark
+            lip_indices = list(range(48, 68))  # 입 주위 landmark index
+
+            xs = [int(landmarks[i].x * w) for i in lip_indices]
+            ys = [int(landmarks[i].y * h) for i in lip_indices]
+            x1, x2 = max(0, min(xs)), min(w, max(xs))
+            y1, y2 = max(0, min(ys)), min(h, max(ys))
+
+            if x2 <= x1 or y2 <= y1:
+                print(f"⚠️ 잘못된 bbox: frame {frame_idx}, box=({x1}, {y1}, {x2}, {y2}) → 문장 전체 건너뜀")
+                invalid = True
+                break
+
+            crop = frame[y1:y2, x1:x2]
+            if crop.size == 0:
+                print(f"⚠️ 빈 crop 발생: frame {frame_idx}, 문장 전체 건너뜀")
+                invalid = True
+                break
+
+            crop_resized = cv2.resize(crop, resize)
+            frames.append(crop_resized)
+
+        if invalid or not frames:
+            skipped_count += 1
             continue
 
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-        ret, frame = cap.read()
-        if not ret:
-            print(f"⚠️ Failed to read frame {frame_idx} in {video_path}")
-            continue
-
-        h, w, _ = frame.shape
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(rgb)
-
-        if not results.multi_face_landmarks:
-            print(f"⚠️ No face detected in frame {frame_idx} of {video_path}")
-            continue
-
-        landmarks = results.multi_face_landmarks[0]
-        lip_points = [
-            (int(lm.x * w), int(lm.y * h))
-            for i, lm in enumerate(landmarks.landmark)
-            if 61 <= i <= 88
-        ]
-
-        if len(lip_points) == 0:
-            print(f"⚠️ No lip points in frame {frame_idx} of {video_path}")
-            continue
-
-        x_coords, y_coords = zip(*lip_points)
-        x_min, x_max = max(min(x_coords) - 10, 0), min(max(x_coords) + 10, w)
-        y_min, y_max = max(min(y_coords) - 10, 0), min(max(y_coords) + 10, h)
-
-        lip_crop = frame[y_min:y_max, x_min:x_max]
-        if lip_crop.size == 0:
-            print(f"⚠️ Empty crop in frame {frame_idx} of {video_path}")
-            continue
-
-        lip_crop = cv2.resize(lip_crop, (128, 128))
-        crops.append(lip_crop)
+        arr = np.stack(frames)
+        save_path = os.path.join(save_dir, f"{video_filename}_sentence_{sent_id}.npy")
+        np.save(save_path, arr)
 
     cap.release()
-
-    if len(crops) > 0:
-        crops = np.stack(crops, axis=0)
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        np.save(output_path, crops)
-        print(f"✅ Saved crop: {output_path} ({crops.shape[0]} frames)")
-    else:
-        print(f"❌ No valid crops found for {video_path}, skipping.")
+    face_mesh.close()
+    print(f"✅ {video_filename}: 모든 문장 crop 완료 (스킵된 문장 수: {skipped_count})")
 
 def save_sentence_labels(json_path, save_dir):
     os.makedirs(save_dir, exist_ok=True)
+
     with open(json_path, 'r', encoding='utf-8') as f:
         metadata = json.load(f)[0]
 
@@ -77,6 +93,7 @@ def save_sentence_labels(json_path, save_dir):
     for sentence in sentence_info:
         sent_id = sentence["ID"]
         text = sentence["sentence_text"].strip()
+
         save_path = os.path.join(save_dir, f"{video_filename}_sentence_{sent_id}.txt")
         with open(save_path, 'w', encoding='utf-8') as f_out:
             f_out.write(text + "\n")
@@ -85,6 +102,7 @@ def save_sentence_labels(json_path, save_dir):
 
 def build_data_list(json_folder, npy_dir, text_dir, wav_dir):
     data_list = []
+
     for filename in os.listdir(json_folder):
         if not filename.endswith(".json"):
             continue
@@ -121,22 +139,10 @@ def crop_lip_all(json_folder, video_folder, save_dir):
     for json_path in json_files:
         filename = os.path.splitext(os.path.basename(json_path))[0]
         video_path = os.path.join(video_folder, filename + ".mp4")
-
-        if not os.path.exists(video_path):
+        if os.path.exists(video_path):
+            crop_lip(video_path, json_path, save_dir)
+        else:
             print(f"❌ 영상 파일 없음: {filename}.mp4")
-            continue
-
-        with open(json_path, 'r', encoding='utf-8') as f:
-            metadata = json.load(f)[0]
-
-        for sentence in metadata["Sentence_info"]:
-            sent_id = sentence["ID"]
-            start_frame = int(sentence["start_frame"])
-            end_frame = int(sentence["end_frame"])
-            frame_indices = list(range(start_frame, end_frame + 1))
-
-            output_path = os.path.join(save_dir, f"{filename}_sentence_{sent_id}.npy")
-            crop_lip(video_path, output_path, frame_indices)
 
 def save_all_sentence_labels(json_folder, save_dir):
     os.makedirs(save_dir, exist_ok=True)
@@ -144,10 +150,28 @@ def save_all_sentence_labels(json_folder, save_dir):
     for json_path in json_files:
         save_sentence_labels(json_path, save_dir)
 
-video_folder = "input_videos"
-json_folder = "input_texts"
-npy_dir = "processed_dataset/npy"
-text_dir = "processed_dataset/text"
-wav_dir = "input_videos"
+def crop_lip_all(json_folder, video_folder, save_dir):
+    os.makedirs(save_dir, exist_ok=True)
+    json_files = glob(os.path.join(json_folder, "*.json"))
+    for json_path in json_files:
+        filename = os.path.splitext(os.path.basename(json_path))[0]
+        video_path = os.path.join(video_folder, filename + ".mp4")
+        if os.path.exists(video_path):
+            crop_lip(video_path, json_path, save_dir)
+        else:
+            print(f"❌ 영상 파일 없음: {filename}.mp4")
 
-crop_lip_all(json_folder, video_folder, npy_dir)
+def save_all_sentence_labels(json_folder, save_dir):
+    os.makedirs(save_dir, exist_ok=True)
+    json_files = glob(os.path.join(json_folder, "*.json"))
+    for json_path in json_files:
+        save_sentence_labels(json_path, save_dir)
+
+# video_folder = "input_videos"
+# json_folder = "input_texts"
+# npy_dir = "processed_dataset/npy"
+# text_dir = "processed_dataset/text"
+# wav_dir = "input_videos"    
+
+# crop_lip_all(json_folder, video_folder, npy_dir)
+# save_all_sentence_labels(json_folder, text_dir)
