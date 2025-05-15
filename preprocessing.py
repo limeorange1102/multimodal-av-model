@@ -6,7 +6,7 @@ from tqdm import tqdm
 from glob import glob
 import mediapipe as mp
 
-def crop_lip_with_mediapipe(video_path, json_path, save_dir, resize=(128, 128), fps=30):
+def crop_lip(video_path, json_path, save_dir, resize=(128, 128), fps=30):
     os.makedirs(save_dir, exist_ok=True)
 
     with open(json_path, 'r', encoding='utf-8') as f:
