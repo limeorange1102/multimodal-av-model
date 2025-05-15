@@ -101,7 +101,7 @@ def crop_lip(video_path, json_path, save_dir, resize=(128, 128), fps=30, margin=
     cap.release()
     face_mesh.close()
     print(f"\n🟢 전체 완료: {video_filename} / 스킵된 문장 수: {skipped_count}")
-    
+
 def save_sentence_labels(json_path, save_dir):
     os.makedirs(save_dir, exist_ok=True)
 
@@ -193,7 +193,7 @@ def save_all_sentence_labels(json_folder, save_dir):
         save_sentence_labels(json_path, save_dir)
 
 video_folder = "input_videos"
-json_folder = "input_texts"
+json_folder = "input_texts1"
 npy_dir = "processed_dataset/npy"
 text_dir = "processed_dataset/text"
 wav_dir = "input_videos"    
