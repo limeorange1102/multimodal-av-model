@@ -12,18 +12,15 @@ class Tokenizer:
                 self.id_to_token.append(token)
 
     def encode(self, text):
-        # 여기선 한 글자씩 매핑 (subword tokenizer일 경우 바뀌어야 함)
-        return [self.token_to_id.get(ch, self.unk_id) for ch in text]
+        # 공백은 SentencePiece가 '▁'로 처리하므로 수동으로 대응
+        return [
+            self.token_to_id.get(ch if ch != ' ' else '▁', self.unk_id)
+            for ch in text
+        ]
 
     def decode(self, ids):
-        tokens = []
-        for i in ids:
-            if i < len(self.id_to_token):
-                token = self.id_to_token[i]
-                if token == '<blank>':
-                    continue
-                tokens.append(token)
-        return ''.join(tokens).strip()
+        tokens = [self.id_to_token[i] for i in ids if i < len(self.id_to_token)]
+        return ''.join(tokens).replace('▁', ' ').strip()
     
     @property
     def vocab_size(self):
