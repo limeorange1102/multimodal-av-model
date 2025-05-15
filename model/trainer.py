@@ -99,17 +99,19 @@ class MultimodalTrainer:
 
                 log_probs1 = self.decoder1(fused_feat1)
                 log_probs2 = self.decoder2(fused_feat2)
-                log_probs_audio = self.decoder_audio(audio_feat)
+                log_probs_audio1 = self.decoder_audio(audio_feat1)
+                log_probs_audio2 = self.decoder_audio(audio_feat2)
                 log_probs_visual1 = self.decoder_visual(visual_feat1)
                 log_probs_visual2 = self.decoder_visual(visual_feat2)
 
                 loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)
                 loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
-                loss_audio = self.ctc_loss(log_probs_audio.transpose(0, 1), text1, input_lengths_audio, len1)
+                loss_audio1 = self.ctc_loss(log_probs_audio1.transpose(0, 1), text1, input_lengths1, len1)
+                loss_audio2 = self.ctc_loss(log_probs_audio2.transpose(0, 1), text2, input_lengths2, len2)
                 loss_visual1 = self.ctc_loss(log_probs_visual1.transpose(0, 1), text1, input_lengths_visual1, len1)
                 loss_visual2 = self.ctc_loss(log_probs_visual2.transpose(0, 1), text2, input_lengths_visual2, len2)
 
-                loss = loss1 + loss2 + 1.0 * loss_audio + 1.5 * (loss_visual1 + loss_visual2)
+                loss = loss1 + loss2 + 1.0 * (loss_audio1 + loss_audio2) + 1.5 * (loss_visual1 + loss_visual2)
                 loss.backward()
                 self.optimizer.step()
                 total_loss += loss.item()
