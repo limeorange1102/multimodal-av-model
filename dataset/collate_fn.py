@@ -21,8 +21,8 @@ def collate_fn(batch, pad_id=0):
     lip2_padded = pad_sequence(lip2_seqs, batch_first=True)
 
     # 텍스트 (CTC용)
-    text1_seqs = [item["text1"] for item in batch]
-    text2_seqs = [item["text2"] for item in batch]
+    text1_seqs = [item["label1"] for item in batch]
+    text2_seqs = [item["label2"] for item in batch]
     text1_lengths = [len(seq) for seq in text1_seqs]
     text2_lengths = [len(seq) for seq in text2_seqs]
     text1_padded = pad_sequence(text1_seqs, batch_first=True, padding_value=pad_id)
