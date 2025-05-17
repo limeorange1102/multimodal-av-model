@@ -104,9 +104,21 @@ class MultimodalTrainer:
                     pred_ids = torch.argmax(log_probs1[0], dim=-1).cpu().tolist()
                     unique_ids = sorted(set(pred_ids))
                     print(f"🧪 [Batch {batch_idx}] Loss = {loss.item():.4f}", flush=True)
+                    # 🔍 디코더 출력 shape 확인
+                    print(f"[디버그] log_probs1.shape: {log_probs1.shape}", flush=True)
+
+                    # 🔍 softmax 확률 평균 분포 분석
+                    import torch.nn.functional as F
+                    probs = F.softmax(log_probs1[0], dim=-1)  # shape: [T, V]
+                    mean_probs = probs.mean(dim=0).detach().cpu().numpy()  # 각 토큰 평균 확률
+                    top_ids = mean_probs.argsort()[-10:][::-1]  # 상위 10개 토큰
+                    top_tokens = [(i, round(mean_probs[i], 4)) for i in top_ids]
+                    print(f"[디버그] 상위 10개 토큰 평균 확률: {top_tokens}", flush=True)
+                    
                     print(f"[진단] Batch {batch_idx} - 예측 토큰 ID (앞 20개): {pred_ids[:20]}", flush=True)
                     print(f"[진단] 고유 토큰 ID들: {unique_ids}", flush=True)
                     print(f"\n🔎 [Batch {batch_idx}] 예측 결과 확인", flush = True)
+                    
                     with torch.no_grad():
                         pred1_ids = torch.argmax(log_probs1, dim=-1)
                         for i in range(min(2, pred1_ids.size(0))):
