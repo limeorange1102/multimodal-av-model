@@ -55,7 +55,7 @@ class MultimodalTrainer:
 
         total_loss = 0
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="Training", ncols=100)):
-            # try:
+            try:
                 self.optimizer.zero_grad()
 
                 lip1 = batch["lip1"].to(self.device)
@@ -114,7 +114,7 @@ class MultimodalTrainer:
                     top_ids = mean_probs.argsort()[-10:][::-1]  # 상위 10개 토큰
                     top_tokens = [(i, round(mean_probs[i], 4)) for i in top_ids]
                     print(f"[디버그] 상위 10개 토큰 평균 확률: {top_tokens}", flush=True)
-                    
+
                     print(f"[진단] Batch {batch_idx} - 예측 토큰 ID (앞 20개): {pred_ids[:20]}", flush=True)
                     print(f"[진단] 고유 토큰 ID들: {unique_ids}", flush=True)
                     print(f"\n🔎 [Batch {batch_idx}] 예측 결과 확인", flush = True)
@@ -127,9 +127,9 @@ class MultimodalTrainer:
                             true1 = self.tokenizer.decode(text1[i][:len1[i]].cpu().tolist())
                             print(f"[화자1 예측] {decoded1}", flush=True)
                             print(f"[화자1 정답] {true1}", flush=True)
-            # except Exception as e:
-            #     print(f"❌ Error at batch {batch_idx}: {e}", flush=True)
-            #     continue
+            except Exception as e:
+                print(f"❌ Error at batch {batch_idx}: {e}", flush=True)
+                continue
 
         return total_loss / len(dataloader)
 
