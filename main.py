@@ -41,6 +41,7 @@ def save_checkpoint(epoch, trainer, path):
         'audio_encoder': trainer.audio_encoder.state_dict(),
         'fusion': trainer.fusion_module.state_dict(),
         'decoder1': trainer.decoder1.state_dict(),
+        'decoder2': trainer.decoder2.state_dict(),
         'decoder_audio': trainer.decoder_audio.state_dict(),
         'decoder_visual': trainer.decoder_visual.state_dict(),
         'optimizer': trainer.optimizer.state_dict(),
@@ -52,6 +53,7 @@ def load_checkpoint(trainer, path):
     trainer.audio_encoder.load_state_dict(checkpoint['audio_encoder'])
     trainer.fusion_module.load_state_dict(checkpoint['fusion'])
     trainer.decoder1.load_state_dict(checkpoint['decoder1'])
+    trainer.decoder2.load_state_dict(checkpoint['decoder2'])
     trainer.decoder_audio.load_state_dict(checkpoint['decoder_audio'])
     trainer.decoder_visual.load_state_dict(checkpoint['decoder_visual'])
     trainer.optimizer.load_state_dict(checkpoint['optimizer'])
@@ -97,6 +99,12 @@ def main():
         blank_id=tokenizer.blank_id
     )
 
+    decoder2 = CTCDecoder(
+        input_dim=512,
+        vocab_size=tokenizer.vocab_size,
+        blank_id=tokenizer.blank_id
+    )
+
     decoder_audio = CTCDecoder(
         input_dim=audio_encoder.output_dim,
         vocab_size=tokenizer.vocab_size,
@@ -113,7 +121,7 @@ def main():
 
     trainer = MultimodalTrainer(
         visual_encoder, audio_encoder, fusion,
-        decoder1, decoder_audio, decoder_visual,
+        decoder1, decoder2, decoder_audio, decoder_visual,
         tokenizer,
         learning_rate=1e-4,
         device=device
@@ -130,6 +138,7 @@ def main():
     start_epoch = 1
     best_wer = 1.0
     wer_history = []
+    acc_history = []
     loss_history = []
 
     if os.path.exists(last_ckpt_path):
@@ -141,12 +150,11 @@ def main():
     print(f"🧪 start_epoch={start_epoch}")
 
     with open(wer_log_path, "w") as f:
-        f.write("epoch,wer\n")
+        f.write("epoch,wer1,wer2,average_wer\n")
     with open(loss_log_path, "w") as f:
         f.write("epoch,loss\n")
     with open(sentence_acc_log_path, "w", encoding="utf-8") as f:
-        f.write("epoch,sentence_acc\n")
-
+        f.write("epoch,acc1,acc2,average_acc\n")
     print("▶️ for epoch 진입", flush=True)
     for epoch in range(start_epoch, 21):
         logging.info(f"\n📚 Epoch {epoch}/20")
@@ -154,22 +162,26 @@ def main():
         loss = trainer.train_epoch(train_loader)
         loss_history.append(loss)
 
-        wer_score, sentence_acc = trainer.evaluate(val_loader)
-        wer_history.append(wer_score)
+        wer1, acc1, wer2, acc2 = trainer.evaluate(val_loader)
+        average_wer = (wer1 + wer2) / 2
+        average_acc = (acc1 + acc2) / 2
+
+        wer_history.append(average_wer)
+        acc_history.append(average_acc)
 
         with open(wer_log_path, "a") as f:
-            f.write(f"{epoch},{wer_score:.4f}\n")
+            f.write(f"{epoch},{wer1:.4f},{wer2:.4f},{average_wer:.4f}\n")
         with open(loss_log_path, "a") as f:
             f.write(f"{epoch},{loss:.4f}\n")
         with open(sentence_acc_log_path, "a", encoding="utf-8") as f:
-            f.write(f"{epoch},{sentence_acc:.4f}\n")
+            f.write(f"{epoch},{acc1:.4f},{acc2:.4f},{average_acc:.4f}\n")
 
         save_checkpoint(epoch, trainer, last_ckpt_path)
         logging.info("💾 마지막 체크포인트 저장 완료")
         print("💾 마지막 체크포인트 저장 완료", flush=True)
 
-        if wer_score < best_wer:
-            best_wer = wer_score
+        if average_wer < best_wer:
+            best_wer = average_wer
             save_checkpoint(epoch, trainer, best_ckpt_path)
             logging.info("🏅 Best 모델 갱신 및 저장 완료")
             print("🏅 Best 모델 갱신 및 저장 완료", flush=True)
@@ -184,7 +196,8 @@ def main():
     plt.grid(True)
 
     plt.subplot(1, 2, 2)
-    plt.plot(range(start_epoch, 21), wer_history, marker='o')
+    plt.plot(range(start_epoch, 21), wer_history, marker='o', color='blue')
+    plt.plot(range(start_epoch, 21), acc_history, marker='x', color='green')
     plt.xlabel("Epoch")
     plt.ylabel("WER")
     plt.title("Validation WER over Epochs")
