@@ -103,6 +103,7 @@ class MultimodalTrainer:
                 if batch_idx % 100 == 0:
                     pred_ids = torch.argmax(log_probs1[0], dim=-1).cpu().tolist()
                     unique_ids = sorted(set(pred_ids))
+                    print(f"🧪 [Batch {batch_idx}] Loss = {loss.item():.4f}", flush=True)
                     print(f"[진단] Batch {batch_idx} - 예측 토큰 ID (앞 20개): {pred_ids[:20]}", flush=True)
                     print(f"[진단] 고유 토큰 ID들: {unique_ids}", flush=True)
                     print(f"\n🔎 [Batch {batch_idx}] 예측 결과 확인", flush = True)
