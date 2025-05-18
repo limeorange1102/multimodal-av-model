@@ -6,7 +6,7 @@ import torch.nn.functional as F
 class CTCDecoder(nn.Module):
     def __init__(self, input_dim, vocab_size, blank_id=0):
         super().__init__()
-        self.linear = nn.Sequential(
+        self.net = nn.Sequential(
             nn.LayerNorm(input_dim),
             nn.Dropout(0.3),  # dropout 추가!
             nn.Linear(input_dim, vocab_size)
