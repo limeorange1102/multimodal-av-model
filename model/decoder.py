@@ -6,7 +6,11 @@ import torch.nn.functional as F
 class CTCDecoder(nn.Module):
     def __init__(self, input_dim, vocab_size, blank_id=0):
         super().__init__()
-        self.linear = nn.Linear(input_dim, vocab_size)
+        self.linear = nn.Sequential(
+            nn.LayerNorm(input_dim),
+            nn.Dropout(0.3),  # dropout 추가!
+            nn.Linear(input_dim, vocab_size)
+        )
         self.ctc_loss = nn.CTCLoss(blank=blank_id, zero_infinity=True)
 
     def forward(self, x, target=None, input_lengths=None, target_lengths=None):
@@ -19,7 +23,7 @@ class CTCDecoder(nn.Module):
         If target is provided, returns CTC loss.
         If target is None, returns log-probabilities.
         """
-        logits = self.linear(x)                 # [B, T, V]
+        logits = self.net(x)                 # [B, T, V]
         log_probs = F.log_softmax(logits, dim=-1)  # [B, T, V]
 
         if target is not None:
