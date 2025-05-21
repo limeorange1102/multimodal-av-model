@@ -28,14 +28,27 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         a2 = np.asarray(a2).flatten()
 
         # Pad to match length
-        max_len = max(len(a1), len(a2))
-        a1 = np.pad(a1, (0, max_len - len(a1)), mode="constant")
-        a2 = np.pad(a2, (0, max_len - len(a2)), mode="constant")
+        len1 = len(a1)
+        len2 = len(a2)
 
-        # Mix audio
-        mix = a1 + a2
-        mix = mix.astype(np.float32)
-        mix = mix / (np.max(np.abs(mix)) + 1e-6)
+        if len1 <= len2: #화자 1이 더 짧은 경우
+            a2_trimmed = a2[:len1]
+            mix1 = a1 + a2_trimmed
+
+            a1_padded = np.pad(a1, (0, len2 - len1), mode="constant")
+            mix2 = a1_padded + a2
+        else: #화자 2가 더 짧은 경우
+            a2_padded = np.pad(a2, (0, len1 - len2), mode="constant")
+            mix1 = a1 + a2_padded
+
+            a1_trimmed = a1[:len2]
+            mix2 = a1_trimmed + a2
+
+        mix1 = mix1.astype(np.float32)
+        mix1 = mix1 / (np.max(np.abs(mix1)) + 1e-6)
+
+        mix2 = mix2.astype(np.float32)
+        mix2 = mix2 / (np.max(np.abs(mix2)) + 1e-6)
 
         # Load lips
         try:
@@ -59,9 +72,8 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
             label2 = self.tokenizer.encode(f.read().strip())
 
         return {
-            "audio": mix.astype(np.float32),
-            "audio1_raw": a1.astype(np.float32),
-            "audio2_raw": a2.astype(np.float32),
+            "audio1": mix1.astype(np.float32),
+            "audio2": mix2.astype(np.float32),
 
             "lip1": lip1.astype(np.float32),
             "label1": np.array(label1, dtype=np.int64),
@@ -83,7 +95,7 @@ class RandomSentencePairDataset(MultiSpeakerDataset):
     def __getitem__(self, idx):
         return super().__getitem__(idx)
 
-class FixedSentencePairDataset(MultiSpeakerDataset):
+class FixedSentencePairDataset(MultiSpeakerDataset): 
     def __init__(self, pair_list, tokenizer):
         super().__init__(pair_list, tokenizer)
         self.pair_list = pair_list
@@ -105,13 +117,27 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
         a1 = np.asarray(a1).flatten()
         a2 = np.asarray(a2).flatten()
 
-        max_len = max(len(a1), len(a2))
-        a1 = np.pad(a1, (0, max_len - len(a1)), mode="constant")
-        a2 = np.pad(a2, (0, max_len - len(a2)), mode="constant")
+        # Pad to match length
+        len1 = len(a1)
+        len2 = len(a2)
 
-        mix = a1 + a2
-        mix = mix.astype(np.float32)
-        mix = mix / (np.max(np.abs(mix)) + 1e-6)
+        if len1 <= len2: #화자 1이 더 짧은 경우
+            a2_trimmed = a2[:len1]
+            mix1 = a1 + a2_trimmed
+
+            a1_padded = np.pad(a1, (0, len2 - len1), mode="constant")
+            mix2 = a1_padded + a2
+        else: #화자 2가 더 짧은 경우
+            a2_padded = np.pad(a2, (0, len1 - len2), mode="constant")
+            mix1 = a1 + a2_padded
+            
+            a1_trimmed = a1[:len2]
+            mix2 = a1_trimmed + a2
+
+        mix1 = mix1.astype(np.float32)
+        mix1 = mix1 / (np.max(np.abs(mix1)) + 1e-6)
+        mix2 = mix2.astype(np.float32)
+        mix2 = mix2 / (np.max(np.abs(mix2)) + 1e-6)
 
         lip1 = np.load(s1["lip_path"])
         lip1 = np.stack([cv2.resize(frame, (64, 64)) for frame in lip1])
@@ -125,9 +151,8 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
             label2 = self.tokenizer.encode(f.read().strip())
 
         return {
-            "audio": mix.astype(np.float32),
-            "audio1_raw": a1.astype(np.float32),
-            "audio2_raw": a2.astype(np.float32),
+            "audio1": mix1.astype(np.float32),
+            "audio2": mix2.astype(np.float32),
 
             "lip1": lip1.astype(np.float32),
             "label1": np.array(label1, dtype=np.int64),
