@@ -35,6 +35,7 @@ class VisualEncoder(nn.Module):
         # x: (B, T, C, H, W)
         B, T, C, H, W = x.shape
         x = x.view(B * T, C, H, W)
+        x = nn.functional.interpolate(x, size=(224, 224), mode='bilinear', align_corners=False)
         feats = self.resnet(x)         # (B*T, 512)
         feats = feats.view(B, T, -1)   # (B, T, 512)
         output, _ = self.rnn(feats)
