@@ -53,14 +53,14 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         # Load lips
         try:
             lip1_raw = np.load(s1["lip_path"])
-            lip1 = np.stack([cv2.resize(frame, (64, 64)) for frame in lip1_raw])
+            lip1 = np.stack([frame for frame in lip1_raw])
         except Exception as e:
             print(f"❌ lip1 로딩 실패: {s1['lip_path']} - {e}")
             return self.__getitem__(random.randint(0, len(self.sentence_list) - 1))
 
         try:
             lip2_raw = np.load(s2["lip_path"])
-            lip2 = np.stack([cv2.resize(frame, (64, 64)) for frame in lip2_raw])
+            lip2 = np.stack([frame for frame in lip2_raw])
         except Exception as e:
             print(f"❌ lip2 로딩 실패: {s2['lip_path']} - {e}")
             return self.__getitem__(random.randint(0, len(self.sentence_list) - 1))
@@ -140,10 +140,10 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
         mix2 = mix2 / (np.max(np.abs(mix2)) + 1e-6)
 
         lip1 = np.load(s1["lip_path"])
-        lip1 = np.stack([cv2.resize(frame, (64, 64)) for frame in lip1])
+        lip1 = np.stack([frame for frame in lip1])
 
         lip2 = np.load(s2["lip_path"])
-        lip2 = np.stack([cv2.resize(frame, (64, 64)) for frame in lip2])
+        lip2 = np.stack([frame for frame in lip2])
 
         with open(s1["text_path"], "r", encoding="utf-8") as f:
             label1 = self.tokenizer.encode(f.read().strip())
