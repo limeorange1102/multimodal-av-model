@@ -7,8 +7,6 @@ class CTCDecoder(nn.Module):
     def __init__(self, input_dim, vocab_size, blank_id=0):
         super().__init__()
         self.net = nn.Sequential(
-            nn.LayerNorm(input_dim),
-            nn.Dropout(0.3),  # dropout 추가!
             nn.Linear(input_dim, vocab_size)
         )
         self.ctc_loss = nn.CTCLoss(blank=blank_id, zero_infinity=True)

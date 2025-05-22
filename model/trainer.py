@@ -7,14 +7,13 @@ import numpy as np
 
 class MultimodalTrainer:
     def __init__(self, visual_encoder, audio_encoder, fusion_module,
-                 decoder1, decoder2, decoder_audio, decoder_visual,
+                 decoder1, decoder_audio, decoder_visual,
                  tokenizer, learning_rate=1e-4, device="cuda"):
         self.visual_encoder = visual_encoder.to(device)
         self.audio_encoder = audio_encoder.to(device)
         self.fusion_module = fusion_module.to(device)
 
         self.decoder1 = decoder1.to(device)
-        self.decoder2 = decoder2.to(device)
         self.decoder_audio = decoder_audio.to(device)
         self.decoder_visual = decoder_visual.to(device)
 
@@ -28,7 +27,6 @@ class MultimodalTrainer:
             list(self.audio_encoder.parameters()) +
             list(self.fusion_module.parameters()) +
             list(self.decoder1.parameters()) +
-            list(self.decoder2.parameters()) +
             list(self.decoder_audio.parameters()) +
             list(self.decoder_visual.parameters())
         )
@@ -85,7 +83,7 @@ class MultimodalTrainer:
                 input_lengths_visual2 = torch.full((visual_feat2.size(0),), visual_feat2.size(1), dtype=torch.long).to(self.device)
 
                 log_probs1 = self.decoder1(fused_feat1)
-                log_probs2 = self.decoder2(fused_feat2)
+                log_probs2 = self.decoder1(fused_feat2)
                 log_probs_audio1 = self.decoder_audio(audio_feat1)
                 log_probs_audio2 = self.decoder_audio(audio_feat2)
                 log_probs_visual1 = self.decoder_visual(visual_feat1)
@@ -182,7 +180,7 @@ class MultimodalTrainer:
                 visual_feat2 = self.visual_encoder(lip2)
                 audio_feat2 = self.audio_encoder(audio2, attention_mask=audio2_mask)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
-                log_probs2 = self.decoder2(fused_feat2)
+                log_probs2 = self.decoder1(fused_feat2)
 
                 pred1 = torch.argmax(log_probs1, dim=-1).cpu().numpy()
                 pred2 = torch.argmax(log_probs2, dim=-1).cpu().numpy()

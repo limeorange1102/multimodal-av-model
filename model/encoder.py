@@ -21,6 +21,9 @@ class VisualEncoder(nn.Module):
             bidirectional=bidirectional
         )
 
+        self.norm = nn.BatchNorm1d(512)
+        self.dropout = nn.Dropout(p=0.3)
+
         self.output_dim = hidden_dim * 2 if bidirectional else hidden_dim
 
         if pretrained_path is not None:

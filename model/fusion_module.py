@@ -25,7 +25,6 @@ class CrossAttentionFusion(nn.Module):
             batch_first=True,
             bidirectional=True
         )
-        self.temporal_proj = nn.Linear(fused_dim * 2, fused_dim)  # 다시 projection
 
     def forward(self, visual_feat, audio_feat):
         """
@@ -50,7 +49,5 @@ class CrossAttentionFusion(nn.Module):
         fused = self.fusion_proj(fused)           # [B, T, D]
 
         # ✅ Temporal modeling
-        fused_seq, _ = self.temporal_model(fused)       # [B, T, 2D]
-        fused_seq = self.temporal_proj(fused_seq)       # [B, T, D]
-
+        fused_seq, _ = self.temporal_model(fused)  # [B, T, 2*fused_dim]
         return fused_seq
