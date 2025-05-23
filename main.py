@@ -117,9 +117,6 @@ def main():
         audio_encoder=audio_encoder,
         fusion_module=fusion,
         decoder1=decoder1,
-        decoder2=None,
-        decoder_audio=None,
-        decoder_visual=None,
         tokenizer=tokenizer,
         learning_rate=3e-4,
         device=device
