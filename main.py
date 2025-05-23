@@ -41,8 +41,6 @@ def save_checkpoint(epoch, trainer, path):
         'audio_encoder': trainer.audio_encoder.state_dict(),
         'fusion': trainer.fusion_module.state_dict(),
         'decoder1': trainer.decoder1.state_dict(),
-        'decoder_audio': trainer.decoder_audio.state_dict(),
-        'decoder_visual': trainer.decoder_visual.state_dict(),
         'optimizer': trainer.optimizer.state_dict(),
     }, path)
 
@@ -52,8 +50,6 @@ def load_checkpoint(trainer, path):
     trainer.audio_encoder.load_state_dict(checkpoint['audio_encoder'])
     trainer.fusion_module.load_state_dict(checkpoint['fusion'])
     trainer.decoder1.load_state_dict(checkpoint['decoder1'])
-    trainer.decoder_audio.load_state_dict(checkpoint['decoder_audio'])
-    trainer.decoder_visual.load_state_dict(checkpoint['decoder_visual'])
     trainer.optimizer.load_state_dict(checkpoint['optimizer'])
     return checkpoint['epoch'] + 1
 
@@ -88,6 +84,17 @@ def main():
         lstm_layers=2,
         bidirectional=True
     )
+    # 🔽 best_checkpoint.pt에서 visual encoder만 불러오기
+    best_ckpt_path = "/content/drive/MyDrive/lip_audio_multimodal/checkpoints/best_checkpoint.pt"
+    ckpt = torch.load(best_ckpt_path, map_location="cpu")
+    visual_encoder.load_state_dict(ckpt["visual_encoder"])
+    print("✅ visual encoder loaded from best_checkpoint.pt")
+
+    # 🔽 freeze
+    for param in visual_encoder.resnet.parameters():
+        param.requires_grad = False
+    for param in visual_encoder.rnn.parameters():
+        param.requires_grad = False
 
     audio_encoder = AudioEncoder(freeze=False)
 
@@ -103,23 +110,11 @@ def main():
         blank_id=tokenizer.blank_id
     )
 
-    decoder_audio = CTCDecoder(
-        input_dim=audio_encoder.output_dim,
-        vocab_size=tokenizer.vocab_size,
-        blank_id=tokenizer.blank_id
-    )
-
-    decoder_visual = CTCDecoder(
-        input_dim=visual_encoder.output_dim,
-        vocab_size=tokenizer.vocab_size,
-        blank_id=tokenizer.blank_id
-    )
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     trainer = MultimodalTrainer(
         visual_encoder, audio_encoder, fusion,
-        decoder1, decoder_audio, decoder_visual,
+        decoder1, None, None,
         tokenizer,
         learning_rate=1e-4,
         device=device
@@ -157,6 +152,16 @@ def main():
     for epoch in range(start_epoch, 21):
         logging.info(f"\n📚 Epoch {epoch}/20")
         print(f"\n📚 Epoch {epoch}/20", flush=True)
+
+        # ✅ 조건부 VisualEncoder unfreeze
+        if epoch == 10 and not hasattr(trainer.visual_encoder, "unfrozen"):
+            for param in trainer.visual_encoder.resnet.parameters():
+                param.requires_grad = True
+            for param in trainer.visual_encoder.rnn.parameters():
+                param.requires_grad = True
+            trainer.visual_encoder.unfrozen = True
+            print(f"🧠 VisualEncoder unfrozen at epoch {epoch}")
+
         loss = trainer.train_epoch(train_loader)
         loss_history.append(loss)
 

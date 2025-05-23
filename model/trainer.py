@@ -7,15 +7,12 @@ import numpy as np
 
 class MultimodalTrainer:
     def __init__(self, visual_encoder, audio_encoder, fusion_module,
-                 decoder1, decoder_audio, decoder_visual,
-                 tokenizer, learning_rate=1e-4, device="cuda"):
+                 decoder1, tokenizer, learning_rate=1e-4, device="cuda"):
         self.visual_encoder = visual_encoder.to(device)
         self.audio_encoder = audio_encoder.to(device)
         self.fusion_module = fusion_module.to(device)
 
         self.decoder1 = decoder1.to(device)
-        self.decoder_audio = decoder_audio.to(device)
-        self.decoder_visual = decoder_visual.to(device)
 
         self.tokenizer = tokenizer
         self.device = device
@@ -26,9 +23,7 @@ class MultimodalTrainer:
             list(self.visual_encoder.parameters()) +
             list(self.audio_encoder.parameters()) +
             list(self.fusion_module.parameters()) +
-            list(self.decoder1.parameters()) +
-            list(self.decoder_audio.parameters()) +
-            list(self.decoder_visual.parameters())
+            list(self.decoder1.parameters()) 
         )
 
         self.optimizer = torch.optim.Adam(self.parameters, lr=learning_rate)
@@ -48,8 +43,6 @@ class MultimodalTrainer:
         self.audio_encoder.train()
         self.fusion_module.train()
         self.decoder1.train()
-        self.decoder_audio.train()
-        self.decoder_visual.train()
 
         total_loss = 0
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="Training", ncols=100)):
@@ -77,30 +70,13 @@ class MultimodalTrainer:
                 input_lengths1 = torch.full((fused_feat1.size(0),), fused_feat1.size(1), dtype=torch.long).to(self.device)
                 input_lengths2 = torch.full((fused_feat2.size(0),), fused_feat2.size(1), dtype=torch.long).to(self.device)
 
-                input_lengths_audio1 = torch.full((audio_feat1.size(0),), audio_feat1.size(1), dtype=torch.long).to(self.device)
-                input_lengths_audio2 = torch.full((audio_feat2.size(0),), audio_feat2.size(1), dtype=torch.long).to(self.device)                
-                input_lengths_visual1 = torch.full((visual_feat1.size(0),), visual_feat1.size(1), dtype=torch.long).to(self.device)
-                input_lengths_visual2 = torch.full((visual_feat2.size(0),), visual_feat2.size(1), dtype=torch.long).to(self.device)
-
                 log_probs1 = self.decoder1(fused_feat1)
                 log_probs2 = self.decoder1(fused_feat2)
-                log_probs_audio1 = self.decoder_audio(audio_feat1)
-                log_probs_audio2 = self.decoder_audio(audio_feat2)
-                log_probs_visual1 = self.decoder_visual(visual_feat1)
-                log_probs_visual2 = self.decoder_visual(visual_feat2)
 
                 loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)
                 loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
-                loss_audio1 = self.ctc_loss(log_probs_audio1.transpose(0, 1), text1, input_lengths_audio1, len1)
-                loss_audio2 = self.ctc_loss(log_probs_audio2.transpose(0, 1), text2, input_lengths_audio2, len2)                
-                loss_visual1 = self.ctc_loss(log_probs_visual1.transpose(0, 1), text1, input_lengths_visual1, len1)
-                loss_visual2 = self.ctc_loss(log_probs_visual2.transpose(0, 1), text2, input_lengths_visual2, len2)
 
-                loss_audio = (loss_audio1 + loss_audio2) / 2
-                loss_visual = (loss_visual1 + loss_visual2) / 2
-
-
-                loss = (loss1 + loss2) + 0.5 * loss_audio + 1.5 * loss_visual
+                loss = (loss1 + loss2)
                 loss.backward()
                 self.optimizer.step()
                 total_loss += loss.item()
