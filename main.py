@@ -185,9 +185,13 @@ def main():
 
         if average_wer < best_wer:
             best_wer = average_wer
+            no_improve_counter = 0
             save_checkpoint(epoch, trainer, best_ckpt_path)
             logging.info("🏅 Best 모델 갱신 및 저장 완료")
             print("🏅 Best 모델 갱신 및 저장 완료", flush=True)
+        else:
+            no_improve_counter += 1
+            print(f"🔻 성능 감소 무: {no_improve_counter}, {best_wer}/", flush=True)
 
     # 시각화
     plt.figure(figsize=(10, 4))
