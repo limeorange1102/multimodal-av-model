@@ -48,15 +48,6 @@ def collate_fn(batch, pad_id=0):
     text2_lengths = [len(seq) for seq in text2_seqs]
     text2_padded = pad_sequence(text2_seqs, batch_first=True, padding_value=pad_id)
 
-    # 오디오 (혼합)
-    audio_seqs = [torch.tensor(item["audio"]) for item in batch]
-    audio_lengths = [seq.shape[0] for seq in audio_seqs]
-    audio_padded = pad_sequence(audio_seqs, batch_first=True)
-
-    attention_mask = torch.zeros_like(audio_padded, dtype=torch.bool)
-    for i, length in enumerate(audio_lengths):
-        attention_mask[i, :length] = 1
-
     return {
         # 화자 1
         "lip1": lip1_padded,
