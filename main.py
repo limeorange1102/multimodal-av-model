@@ -113,10 +113,15 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     trainer = MultimodalTrainer(
-        visual_encoder, audio_encoder, fusion,
-        decoder1, None, None,
-        tokenizer,
-        learning_rate=1e-4,
+        visual_encoder=visual_encoder,
+        audio_encoder=audio_encoder,
+        fusion_module=fusion,
+        decoder1=decoder1,
+        decoder2=None,
+        decoder_audio=None,
+        decoder_visual=None,
+        tokenizer=tokenizer,
+        learning_rate=3e-4,
         device=device
     )
 
@@ -149,7 +154,9 @@ def main():
     with open(sentence_acc_log_path, "w", encoding="utf-8") as f:
         f.write("epoch,acc1,acc2,average_acc\n")
     print("▶️ for epoch 진입", flush=True)
-    for epoch in range(start_epoch, 21):
+
+    max_epoch = 50
+    for epoch in range(start_epoch, max_epoch + 1):
         logging.info(f"\n📚 Epoch {epoch}/20")
         print(f"\n📚 Epoch {epoch}/20", flush=True)
 
