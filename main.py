@@ -85,7 +85,7 @@ def main():
         bidirectional=True
     )
     # 🔽 best_checkpoint.pt에서 visual encoder만 불러오기
-    best_ckpt_path = "/content/drive/MyDrive/lip_audio_multimodal/checkpoints/best_checkpoint.pt"
+    best_ckpt_path = "/content/drive/MyDrive/lip_audio_multimodal/checkpoints_single/best_checkpoint.pt"
     ckpt = torch.load(best_ckpt_path, map_location="cpu")
     visual_encoder.load_state_dict(ckpt["visual_encoder"])
     print("✅ visual encoder loaded from best_checkpoint.pt")
