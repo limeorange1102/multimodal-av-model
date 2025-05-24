@@ -16,10 +16,10 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         s1, s2 = random.sample(self.sentence_list, 2)
 
         # Load waveforms (1D np.array)
-        a1, sr1 = librosa.load(s1["audio_path"], sr=None)
+        a1, sr1 = librosa.load(s1["audio_path"], sr=16000)
         a1 = a1[int(s1["start_time"] * sr1):int(s1["end_time"] * sr1)]
 
-        a2, sr2 = librosa.load(s2["audio_path"], sr=None)
+        a2, sr2 = librosa.load(s2["audio_path"], sr=16000)
         a2 = a2[int(s2["start_time"] * sr2):int(s2["end_time"] * sr2)]
 
         assert sr1 == sr2, f"[오류] Sampling rates do not match! sr1={sr1}, sr2={sr2}"
