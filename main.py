@@ -126,13 +126,14 @@ def main():
 
     last_ckpt_path = os.path.join(drive_ckpt_dir, "last_checkpoint.pt")
     best_ckpt_path = os.path.join(drive_ckpt_dir, "best_checkpoint.pt")
-    wer_log_path = os.path.join(drive_ckpt_dir, "wer_log.csv")
-    sentence_acc_log_path = os.path.join(drive_ckpt_dir, "sentence_acc_log.csv")
-    loss_log_path = os.path.join(drive_ckpt_dir, "loss_log.csv")
+    best_loss_path = os.path.join(drive_ckpt_dir, "best_loss.pt")
+    eval_log_path = os.path.join(drive_ckpt_dir, "eval_log.csv")
+    train_log_path = os.path.join(drive_ckpt_dir, "train_log.csv")
     start_epoch = 1
-    best_wer = 1.0
+    best_wer = float('inf')
+    best_loss = float('inf')
+    patience = 5
     wer_history = []
-    acc_history = []
     loss_history = []
 
     if os.path.exists(last_ckpt_path):
@@ -143,12 +144,10 @@ def main():
         print(f"➡️  Epoch {start_epoch}부터 재개", flush=True)
     print(f"🧪 start_epoch={start_epoch}")
 
-    with open(wer_log_path, "w") as f:
+    with open(eval_log_path, "w") as f:
         f.write("epoch,wer1,wer2,average_wer\n")
-    with open(loss_log_path, "w") as f:
+    with open(train_log_path, "w") as f:
         f.write("epoch,loss\n")
-    with open(sentence_acc_log_path, "w", encoding="utf-8") as f:
-        f.write("epoch,acc1,acc2,average_acc\n")
     print("▶️ for epoch 진입", flush=True)
 
     max_epoch = 50
@@ -159,54 +158,40 @@ def main():
         loss = trainer.train_epoch(train_loader)
         loss_history.append(loss)
 
-        wer1, acc1, wer2, acc2 = trainer.evaluate(val_loader)
-        average_wer = (wer1 + wer2) / 2
-        average_acc = (acc1 + acc2) / 2
+        eval_loss, eval_wer = trainer.evaluate(val_loader)
+        
+        loss_history.append(eval_loss)
+        wer_history.append(eval_wer)
 
-        wer_history.append(average_wer)
-        acc_history.append(average_acc)
-
-        with open(wer_log_path, "a") as f:
-            f.write(f"{epoch},{wer1:.4f},{wer2:.4f},{average_wer:.4f}\n")
-        with open(loss_log_path, "a") as f:
+        with open(eval_log_path, "a") as f:
+            f.write(f"{epoch},{eval_loss:.4f},{eval_wer:.4f}\n")
+        with open(train_log_path, "a") as f:
             f.write(f"{epoch},{loss:.4f}\n")
-        with open(sentence_acc_log_path, "a", encoding="utf-8") as f:
-            f.write(f"{epoch},{acc1:.4f},{acc2:.4f},{average_acc:.4f}\n")
 
         save_checkpoint(epoch, trainer, last_ckpt_path)
         logging.info("💾 마지막 체크포인트 저장 완료")
         print("💾 마지막 체크포인트 저장 완료", flush=True)
 
-        if average_wer < best_wer:
-            best_wer = average_wer
-            no_improve_counter = 0
+        if eval_wer < best_wer:
+            best_wer = eval_wer
             save_checkpoint(epoch, trainer, best_ckpt_path)
             logging.info("🏅 Best 모델 갱신 및 저장 완료")
             print("🏅 Best 모델 갱신 및 저장 완료", flush=True)
+
+        if eval_loss < best_loss:
+            best_loss = eval_loss
+            no_improve_counter = 0
+            save_checkpoint(epoch, trainer, best_loss_path)
+            logging.info("🏅 Best Loss 모델 갱신 및 저장 완료")
+            print("🏅 Best Loss 모델 갱신 및 저장 완료", flush=True)
         else:
             no_improve_counter += 1
-            print(f"🔻 성능 감소 무: {no_improve_counter}, {best_wer}/", flush=True)
-
-    # 시각화
-    plt.figure(figsize=(10, 4))
-    plt.subplot(1, 2, 1)
-    plt.plot(range(start_epoch, 21), loss_history, marker='o', color='orange')
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("Training Loss over Epochs")
-    plt.grid(True)
-
-    plt.subplot(1, 2, 2)
-    plt.plot(range(start_epoch, 21), wer_history, marker='o', color='blue')
-    plt.plot(range(start_epoch, 21), acc_history, marker='x', color='green')
-    plt.xlabel("Epoch")
-    plt.ylabel("WER")
-    plt.title("Validation WER over Epochs")
-    plt.grid(True)
-
-    plt.tight_layout()
-    plt.savefig(os.path.join(drive_ckpt_dir, "metrics_plot.png"))
-    plt.show()
+            print(f"🔻 Loss 감소 무: {no_improve_counter}, {best_loss}/", flush=True)
+        
+        if no_improve_counter >= patience:
+            logging.info(f"⏳ Early stopping: {patience} epochs without improvement")
+            print(f"⏳ Early stopping: {patience} epochs without improvement", flush=True)
+            break
 
 if __name__ == "__main__":
     main()
