@@ -83,11 +83,7 @@ def main():
     val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=4, collate_fn=collate_fn)
     test_loader = DataLoader(test_dataset, batch_size=2, shuffle=False, num_workers=2, collate_fn=collate_fn)
 
-    visual_encoder = VisualEncoder(
-        hidden_dim=256,
-        lstm_layers=2,
-        bidirectional=True
-    )
+    visual_encoder = VisualEncoder(relu_type='prelu')
     # 🔽 best_checkpoint.pt에서 visual encoder만 불러오기
     best_ckpt_path = "/content/drive/MyDrive/lip_audio_multimodal/checkpoints_visual_loss/best_loss_encoder.pt"
     ckpt = torch.load(best_ckpt_path, map_location="cpu")
