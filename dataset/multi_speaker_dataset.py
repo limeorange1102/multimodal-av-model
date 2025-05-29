@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import librosa
 import cv2
+import os
 
 class MultiSpeakerDataset(torch.utils.data.Dataset):
     def __init__(self, sentence_list, tokenizer):
@@ -82,17 +83,30 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
             "lip2_len": lip2.shape[0],
         }
 
+
 class RandomSentencePairDataset(MultiSpeakerDataset):
     def __init__(self, sentence_list, tokenizer, num_pairs_per_epoch=10000):
         super().__init__(sentence_list, tokenizer)
         self.num_pairs_per_epoch = num_pairs_per_epoch
 
+    # 🔽 화자 ID 추출 함수 추가
+    def get_speaker_id(self, path):
+        filename = os.path.splitext(os.path.basename(path))[0]  # "lip_J_1_M_03_C486_A_012_sentence_41"
+        return "_".join(filename.split("_")[:7])                # "lip_J_1_M_03_C486_A"
+
     def __len__(self):
         return self.num_pairs_per_epoch
 
+    # 🔽 동일 화자 제거된 getitem
     def __getitem__(self, idx):
-        for _ in range(10):
+        for _ in range(20):  # 재시도 횟수 살짝 증가
             s1, s2 = random.sample(self.sentence_list, 2)
+            id1 = self.get_speaker_id(s1["text_path"])
+            id2 = self.get_speaker_id(s2["text_path"])
+
+            if id1 == id2:
+                continue  # 동일 화자 조합은 무시
+
             try:
                 return self.load_pair(s1, s2)
             except Exception as e:

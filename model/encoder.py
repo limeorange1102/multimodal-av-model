@@ -64,6 +64,7 @@ class VisualEncoder(nn.Module):
             nn.MaxPool3d((1, 3, 3), stride=(1, 2, 2), padding=(0, 1, 1))
         )
         self.trunk = ResNet(BasicBlock, [2, 2, 2, 2], relu_type=relu_type)
+        self.output_dim = 512
 
     def forward(self, x):
         B, C, T, H, W = x.shape
