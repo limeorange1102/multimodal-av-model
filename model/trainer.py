@@ -78,10 +78,18 @@ class MultimodalTrainer:
 
                 visual_feat1 = self.visual_encoder(lip1)
                 visual_feat2 = self.visual_encoder(lip2)
-                audio_feat1 = self.audio_encoder(audio, attention_mask=(mask1 != 3))
-                audio_feat2 = self.audio_encoder(audio, attention_mask=(mask1 != 3))
-                loss_contrast1 = contrastive_loss_with_mask(audio_feat1, mask1)
-                loss_contrast2 = contrastive_loss_with_mask(audio_feat2, mask2)
+                attn_mask1 = (mask1 != 3)
+                attn_mask2 = (mask2 != 3)
+                audio_feat1 = self.audio_encoder(audio, attention_mask=attn_mask1)
+                audio_feat2 = self.audio_encoder(audio, attention_mask=attn_mask2)
+                # mask1도 attention mask를 기반으로 압축
+                mask1_compact = torch.cat([m[attn_mask1[i]] for i, m in enumerate(mask1)], dim=0)
+                mask2_compact = torch.cat([m[attn_mask2[i]] for i, m in enumerate(mask2)], dim=0)
+                # audio_feat도 동일하게 flatten
+                audio_feat1_flat = torch.cat([a[attn_mask1[i]] for i, a in enumerate(audio_feat1)], dim=0)
+                audio_feat2_flat = torch.cat([a[attn_mask2[i]] for i, a in enumerate(audio_feat2)], dim=0)
+                loss_contrast1 = contrastive_loss_with_mask(audio_feat1_flat, mask1_compact)
+                loss_contrast2 = contrastive_loss_with_mask(audio_feat2_flat, mask2_compact)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
                 input_lengths1 = torch.full((fused_feat1.size(0),), fused_feat1.size(1), dtype=torch.long).to(self.device)
