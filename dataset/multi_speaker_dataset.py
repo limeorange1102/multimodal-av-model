@@ -99,7 +99,7 @@ class RandomSentencePairDataset(MultiSpeakerDataset):
 
     # 🔽 동일 화자 제거된 getitem
     def __getitem__(self, idx):
-        for _ in range(20):  # 재시도 횟수 살짝 증가
+        for _ in range(10): 
             s1, s2 = random.sample(self.sentence_list, 2)
             id1 = self.get_speaker_id(s1["text_path"])
             id2 = self.get_speaker_id(s2["text_path"])
@@ -118,12 +118,23 @@ class FixedSentencePairDataset(MultiSpeakerDataset):
         self.pair_list = pair_list
         self.tokenizer = tokenizer
 
+    # 🔽 화자 ID 추출 함수 추가
+    def get_speaker_id(self, path):
+        filename = os.path.splitext(os.path.basename(path))[0]  # "lip_J_1_M_03_C486_A_012_sentence_41"
+        return "_".join(filename.split("_")[:7])                # "lip_J_1_M_03_C486_A"
+
     def __len__(self):
         return len(self.pair_list)
 
     def __getitem__(self, idx):
         for _ in range(10):
             s1, s2 = self.pair_list[idx]
+            id1 = self.get_speaker_id(s1["text_path"])
+            id2 = self.get_speaker_id(s2["text_path"])
+
+            if id1 == id2:
+                idx = (idx + 1) % len(self.pair_list)
+                continue  # 동일 화자 조합은 무시
             try:
                 return self.load_pair(s1, s2)
             except Exception as e:
