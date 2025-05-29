@@ -12,12 +12,12 @@ def collate_fn(batch, pad_id=0):
     """
 
     # 화자 1: 입술
-    lip1_seqs = [torch.tensor(item["lip1"]).permute(0, 3, 1, 2) for item in batch]  # [T, H, W, C] → [T, C, H, W]
+    lip1_seqs = [torch.tensor(item["lip1"]).permute(0, 3, 1, 2).contiguous() for item in batch]  # [T, H, W, C] → [T, C, H, W]
     lip1_lengths = [seq.shape[0] for seq in lip1_seqs]
     lip1_padded = pad_sequence(lip1_seqs, batch_first=True)  # [B, T, C, H, W]
 
     # 화자 2: 입술
-    lip2_seqs = [torch.tensor(item["lip2"]).permute(0, 3, 1, 2) for item in batch]
+    lip2_seqs = [torch.tensor(item["lip2"]).permute(0, 3, 1, 2).contiguous() for item in batch]
     lip2_lengths = [seq.shape[0] for seq in lip2_seqs]
     lip2_padded = pad_sequence(lip2_seqs, batch_first=True)
 
