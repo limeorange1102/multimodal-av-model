@@ -66,13 +66,13 @@ class MultimodalTrainer:
 
                 for i in range(text1.size(0)):
                     if len1[i] == 0:
-                        print(f"[디버그] 🚨 text1[{i}] 길이가 0입니다. 라벨: {text1[i].tolist()}")
+                        print(f"[디버그] 🚨 text1[{i}] 길이가 0입니다. 라벨: {text1[i].tolist()}", flush = True)
 
                     if text1[i].max() >= self.tokenizer.vocab_size:
-                        print(f"[디버그] 🚨 text1[{i}]에 vocab_size 이상 값 존재: {text1[i].tolist()}")
+                        print(f"[디버그] 🚨 text1[{i}]에 vocab_size 이상 값 존재: {text1[i].tolist()}", flush = True)
 
                     if text1[i].min() < 0:
-                        print(f"[디버그] 🚨 text1[{i}]에 음수 인덱스 존재: {text1[i].tolist()}")
+                        print(f"[디버그] 🚨 text1[{i}]에 음수 인덱스 존재: {text1[i].tolist()}", flush = True)
 
 
                 visual_feat1 = self.visual_encoder(lip1)
