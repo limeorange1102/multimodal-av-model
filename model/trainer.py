@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from jiwer import wer
 from tqdm import tqdm
 import numpy as np
-from contrastive import contrastive_loss_with_mask
+#from contrastive import contrastive_loss_with_mask
 
 class MultimodalTrainer:
     def __init__(self, visual_encoder, audio_encoder, fusion_module,
