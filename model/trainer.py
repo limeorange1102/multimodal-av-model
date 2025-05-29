@@ -141,6 +141,8 @@ class MultimodalTrainer:
 
         all_refs1, all_hyps1 = [], []
         all_refs2, all_hyps2 = [], []
+        
+        total_loss = 0.0
 
         with torch.no_grad():
             for batch in dataloader:
@@ -160,38 +162,43 @@ class MultimodalTrainer:
                 visual_feat1 = self.visual_encoder(lip1)                
                 audio_feat1 = self.audio_encoder(audio, attention_mask=mask1)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
-                log_probs1 = self.decoder1(fused_feat1)
+                log_probs1 = self.decoder1(fused_feat1) #(log_probs1.shape: [B, T, V])
+                log_probs1 = F.log_softmax(log_probs1, dim=-1)  # log softmax for CTC
 
                 visual_feat2 = self.visual_encoder(lip2)
                 audio_feat2 = self.audio_encoder(audio, attention_mask=mask2)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
                 log_probs2 = self.decoder1(fused_feat2)
+                log_probs2 = F.log_softmax(log_probs2, dim=-1)
 
-                pred1 = torch.argmax(log_probs1, dim=-1).cpu().numpy()
-                pred2 = torch.argmax(log_probs2, dim=-1).cpu().numpy()
-                input_lengths1 = torch.full((fused_feat1.size(0),), fused_feat1.size(1), dtype=torch.long).to(self.device)
-                input_lengths2 = torch.full((fused_feat2.size(0),), fused_feat2.size(1), dtype=torch.long).to(self.device)
+                input_lengths1 = torch.full(size=(log_probs1.size(0),), fill_value=log_probs1.size(1), dtype=torch.long).to(self.device)
+                input_lengths2 = torch.full(size=(log_probs2.size(0),), fill_value=log_probs2.size(1), dtype=torch.long).to(self.device)
 
-                for i in range(len(pred1)):
-                    p_ids = self.ctc_decode(pred1[i][:input_lengths1[i]])
-                    ref = self.tokenizer.decode(text1[i][:len1[i]].cpu().numpy())
-                    hyp = self.tokenizer.decode(p_ids)
-                    all_hyps1.append(hyp)
-                    all_refs1.append(ref)
-                
-                for i in range(len(pred2)):
-                    p_ids2 = self.ctc_decode(pred2[i][:input_lengths2[i]])
-                    ref2 = self.tokenizer.decode(text2[i][:len2[i]].cpu().numpy())
-                    hyp2 = self.tokenizer.decode(p_ids2)
-                    all_refs2.append(ref2)
-                    all_hyps2.append(hyp2)
+
+                for i in range(log_probs1.size(0)):
+                    pred_ids1 = simple_beam_search(log_probs1[i], beam_width=5, blank=self.tokenizer.blank_id)
+                    decoded1 = self.tokenizer.decode(fast_decode(pred_ids1, blank_id=self.tokenizer.blank_id))
+                    label_ids1 = text1[i][:len1[i]].cpu().tolist()
+                    true_text1 = self.tokenizer.decode(label_ids1)
+                    all_refs1.append(true_text1)
+                    all_hyps1.append(decoded1)
+
+                    pred_ids2 = simple_beam_search(log_probs2[i], beam_width=5, blank=self.tokenizer.blank_id)
+                    decoded2 = self.tokenizer.decode(fast_decode(pred_ids2, blank_id=self.tokenizer.blank_id))
+                    label_ids2 = text2[i][:len2[i]].cpu().tolist()
+                    true_text2 = self.tokenizer.decode(label_ids2)
+                    all_refs2.append(true_text2)
+                    all_hyps2.append(decoded2)
+
+                    # Loss 계산은 argmax 기반 log_probs 사용
+                    loss1 = self.ctc_loss(log_probs1[i].unsqueeze(0), text1[i].unsqueeze(0), input_lengths1[i].unsqueeze(0), len1[i].unsqueeze(0))
+                    loss2 = self.ctc_loss(log_probs2[i].unsqueeze(0), text2[i].unsqueeze(0), input_lengths2[i].unsqueeze(0), len2[i].unsqueeze(0))
+                    total_loss += (loss1.item() + loss2.item()) / 2
 
         wer1 = wer(all_refs1, all_hyps1)
         wer2 = wer(all_refs2, all_hyps2)
-        sentence_acc1 = np.mean([ref.strip() == hyp.strip() for ref, hyp in zip(all_refs1, all_hyps1)])
-        sentence_acc2 = np.mean([ref.strip() == hyp.strip() for ref, hyp in zip(all_refs2, all_hyps2)])
+        avg_wer = (wer1 + wer2) / 2
+        avg_loss = total_loss / len(dataloader.dataset)
 
-        print(f"✅ Eval Results: WER1={wer1:.3f}, SentenceAcc={sentence_acc1:.3f}", flush=True)
-        print(f"✅ Eval Results: WER2={wer2:.3f}, SentenceAcc={sentence_acc2:.3f}", flush=True)
-
-        return wer1, sentence_acc1, wer2, sentence_acc2
+        print(f"[Eval] WER1: {wer1:.3f}, WER2: {wer2:.3f}, Avg: {avg_wer:.3f}, Loss: {avg_loss:.4f}")
+        return avg_loss, avg_wer
