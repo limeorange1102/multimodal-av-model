@@ -85,8 +85,8 @@ class MultimodalTrainer:
                 # mask1도 attention mask를 기반으로 압축
                 mask1_compact = torch.cat([m[m_].long() for m, m_ in zip(mask1, attn_mask1)], dim=0)  # [N]
                 mask2_compact = torch.cat([m[m_].long() for m, m_ in zip(mask2, attn_mask2)], dim=0)  # [N]
-                audio_feat1_flat = torch.cat([a[m] for a, m in zip(audio_feat1, attn_mask1)], dim=0)  # [N, D]
-                audio_feat2_flat = torch.cat([a[m] for a, m in zip(audio_feat2, attn_mask2)], dim=0)  # [N, D]
+                audio_feat1_flat = torch.cat(audio_feat1, dim=0)
+                audio_feat2_flat = torch.cat(audio_feat2, dim=0)
                 loss_contrast1 = contrastive_loss_with_mask(audio_feat1_flat, mask1_compact)
                 loss_contrast2 = contrastive_loss_with_mask(audio_feat2_flat, mask2_compact)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
