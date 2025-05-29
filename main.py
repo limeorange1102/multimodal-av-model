@@ -91,9 +91,9 @@ def main():
     print("✅ visual encoder loaded from best_checkpoint.pt")
 
     # 🔽 freeze
-    for param in visual_encoder.resnet.parameters():
+    for param in visual_encoder.trunk.parameters():
         param.requires_grad = False
-    for param in visual_encoder.rnn.parameters():
+    for param in visual_encoder.frontend3D.parameters():
         param.requires_grad = False
 
     audio_encoder = AudioEncoder(freeze=False)
