@@ -7,44 +7,47 @@ WEIGHT_STRONG_POS = 1.0
 WEIGHT_WEAK_POS = 0.3
 
 
-def contrastive_loss_with_mask(audio_feat, mask):
+def contrastive_loss_with_mask(audio_feat, mask_list):
     """
-    audio_feat: [B, T, D] - audio encoder output
-    mask: [B, T] - values in {0, 1, 2, 3}
+    audio_feat: list of B tensors, each of shape [T_i, D] (after encoder)
+    mask_list:  list of B tensors, each of shape [T_i] with values in {0,1,2}
+                0 = 타화자 음성, 1 = 동시발화, 2 = 단독발화
     """
-    B, T, D = audio_feat.shape
-    device = audio_feat.device
 
-    flat_feat = audio_feat.reshape(B * T, D)     # [B*T, D]
-    flat_mask = mask.reshape(B * T)              # [B*T]
+    # 🔧 Normalize each sample individually
+    normalized_feat_list = [F.normalize(f, dim=1) for f in audio_feat]  # List of [T_i, D]
+    
+    # 🔧 Flatten all features and masks
+    flat_feat = torch.cat(normalized_feat_list, dim=0)  # [sum(T_i), D]
+    flat_mask = torch.cat(mask_list, dim=0)             # [sum(T_i)]
 
-    # mask == 3 구간 제거
-    valid_mask = flat_mask != 3
-    flat_feat = flat_feat[valid_mask]            # [N, D]
-    flat_feat = F.normalize(flat_feat, dim=1)    # cosine similarity 기반 정규화
-    flat_mask = flat_mask[valid_mask]
+    device = flat_feat.device
 
-    # 각 인덱스 추출
+    # 🔍 각 구간의 인덱스
     pos_strong_idx = torch.nonzero(flat_mask == 2).squeeze(1)  # 단독발화
-    pos_weak_idx   = torch.nonzero(flat_mask == 1).squeeze(1)  # 동시발화
-    neg_idx        = torch.nonzero(flat_mask == 0).squeeze(1)  # 타화자 단독발화
+    pos_weak_idx = torch.nonzero(flat_mask == 1).squeeze(1)    # 동시발화
+    neg_idx       = torch.nonzero(flat_mask == 0).squeeze(1)   # 타화자 음성
 
-    total_loss = torch.tensor(0.0, device=device, requires_grad=True)
+    # 🔒 최소 조건: 단독 발화와 음성 분리 구간이 있어야 학습 가능
+    if len(pos_strong_idx) == 0 or len(neg_idx) == 0:
+        return torch.tensor(0.0, requires_grad=True, device=device)
 
-    # 단독발화 vs 타화자 단독발화 → strong positive
-    if len(pos_strong_idx) > 0 and len(neg_idx) > 0:
-        pos_strong_feat = flat_feat[pos_strong_idx]   # [P1, D]
-        neg_feat = flat_feat[neg_idx]                 # [N, D]
-        sim_strong = torch.matmul(pos_strong_feat, neg_feat.T) / TEMPERATURE  # [P1, N]
-        loss_strong = -F.log_softmax(sim_strong, dim=1).mean()
-        total_loss = total_loss + WEIGHT_STRONG_POS * loss_strong
+    # 🎯 feature 추출
+    pos_strong_feat = flat_feat[pos_strong_idx]                   # [P1, D]
+    neg_feat        = flat_feat[neg_idx]                          # [N, D]
+    pos_weak_feat   = flat_feat[pos_weak_idx] if len(pos_weak_idx) > 0 else None  # [P2, D]
 
-    # 동시발화 vs 타화자 단독발화 → weak positive (실제로는 negative-only)
-    if len(pos_weak_idx) > 0 and len(neg_idx) > 0:
-        pos_weak_feat = flat_feat[pos_weak_idx]       # [P2, D]
-        neg_feat = flat_feat[neg_idx]                 # [N, D]
-        sim_weak = torch.matmul(pos_weak_feat, neg_feat.T) / TEMPERATURE      # [P2, N]
+    # ✅ strong positive loss
+    sim_strong = torch.matmul(pos_strong_feat, neg_feat.T) / TEMPERATURE   # [P1, N]
+    loss_strong = -F.log_softmax(sim_strong, dim=1).mean()
+
+    # ✅ weak positive loss (if available)
+    if pos_weak_feat is not None:
+        sim_weak = torch.matmul(pos_weak_feat, neg_feat.T) / TEMPERATURE   # [P2, N]
         loss_weak = -F.log_softmax(sim_weak, dim=1).mean()
-        total_loss = total_loss + WEIGHT_WEAK_POS * loss_weak
+    else:
+        loss_weak = torch.tensor(0.0, device=device)
 
+    # 🎯 최종 contrastive loss
+    total_loss = WEIGHT_STRONG_POS * loss_strong + WEIGHT_WEAK_POS * loss_weak
     return total_loss
