@@ -82,13 +82,17 @@ class MultimodalTrainer:
                 attn_mask2 = (mask2 != 3)
                 audio_feat1 = self.audio_encoder(audio, attention_mask=attn_mask1)
                 audio_feat2 = self.audio_encoder(audio, attention_mask=attn_mask2)
-                # mask1도 attention mask를 기반으로 압축
-                mask1_compact = torch.cat([m[m_].long() for m, m_ in zip(mask1, attn_mask1)], dim=0)  # [N]
-                mask2_compact = torch.cat([m[m_].long() for m, m_ in zip(mask2, attn_mask2)], dim=0)  # [N]
-                audio_feat1_flat = torch.cat(audio_feat1, dim=0)
-                audio_feat2_flat = torch.cat(audio_feat2, dim=0)
-                loss_contrast1 = contrastive_loss_with_mask(audio_feat1_flat, mask1_compact)
-                loss_contrast2 = contrastive_loss_with_mask(audio_feat2_flat, mask2_compact)
+
+                B, T, D = audio_feat1.shape
+                audio_feat1_flat = audio_feat1.reshape(B * T, D)  # [B*T, D]
+                B, T, D = audio_feat2.shape
+                audio_feat2_flat = audio_feat2.reshape(B * T, D)  # [B*T, D]
+
+                mask1_flat = torch.cat([m[attn_mask1[i]] for i, m in enumerate(mask1)], dim=0)  # [N1]
+                mask2_flat = torch.cat([m[attn_mask2[i]] for i, m in enumerate(mask2)], dim=0)  # [N2]
+
+                loss_contrast1 = contrastive_loss_with_mask(audio_feat1_flat, mask1_flat)
+                loss_contrast2 = contrastive_loss_with_mask(audio_feat2_flat, mask2_flat)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
                 input_lengths1 = torch.full((fused_feat1.size(0),), fused_feat1.size(1), dtype=torch.long).to(self.device)
@@ -179,14 +183,16 @@ class MultimodalTrainer:
                 mask1 = batch["mask1"].to(self.device)
                 mask2 = batch["mask2"].to(self.device)
 
-                visual_feat1 = self.visual_encoder(lip1)                
-                audio_feat1 = self.audio_encoder(audio, attention_mask=mask1)
+                visual_feat1 = self.visual_encoder(lip1)   
+                attn_mask1 = (mask1 != 3)             
+                audio_feat1 = self.audio_encoder(audio, attention_mask=attn_mask1)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
                 log_probs1 = self.decoder1(fused_feat1) #(log_probs1.shape: [B, T, V])
                 log_probs1 = F.log_softmax(log_probs1, dim=-1)  # log softmax for CTC
 
                 visual_feat2 = self.visual_encoder(lip2)
-                audio_feat2 = self.audio_encoder(audio, attention_mask=mask2)
+                attn_mask2 = (mask2 != 3)
+                audio_feat2 = self.audio_encoder(audio, attention_mask=attn_mask2)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
                 log_probs2 = self.decoder1(fused_feat2)
                 log_probs2 = F.log_softmax(log_probs2, dim=-1)

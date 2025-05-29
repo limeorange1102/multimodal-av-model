@@ -95,7 +95,7 @@ def main():
     for param in visual_encoder.frontend3D.parameters():
         param.requires_grad = False
 
-    audio_encoder = AudioEncoder(freeze=False)
+    audio_encoder = AudioEncoder(freeze=True)
 
     fusion = CrossAttentionFusion(
         visual_dim=visual_encoder.output_dim,
