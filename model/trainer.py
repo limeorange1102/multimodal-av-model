@@ -144,13 +144,6 @@ class MultimodalTrainer:
                 result.append(idx)
             prev = idx
         return result
-    
-    print("Batch size:", text1.size(0))
-    for i in range(text1.size(0)):
-        label_ids1 = text1[i][:len1[i]].cpu().tolist()
-        for idx in label_ids1:
-            if idx >= self.tokenizer.vocab_size:
-                print(f"[Batch {i}] Invalid label index {idx}, vocab size {self.tokenizer.vocab_size}")
 
     def evaluate(self, dataloader):
         self.visual_encoder.eval()
