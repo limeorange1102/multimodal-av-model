@@ -68,7 +68,7 @@ class MultimodalTrainer:
                     if len1[i] == 0:
                         print(f"[디버그] 🚨 text1[{i}] 길이가 0입니다. 라벨: {text1[i].tolist()}")
 
-                    if text1[i].max() >= tokenizer.vocab_size:
+                    if text1[i].max() >= self.tokenizer.vocab_size:
                         print(f"[디버그] 🚨 text1[{i}]에 vocab_size 이상 값 존재: {text1[i].tolist()}")
 
                     if text1[i].min() < 0:
