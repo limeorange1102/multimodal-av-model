@@ -50,7 +50,7 @@ class MultimodalTrainer:
 
         total_loss = 0
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="Training", ncols=100)):
-
+            try:
                 self.optimizer.zero_grad()
 
                 lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()  # [B, T, C, H, W] → [B, C, T, H, W], C=1, H, W=96
@@ -77,8 +77,8 @@ class MultimodalTrainer:
 
                 visual_feat1 = self.visual_encoder(lip1)
                 visual_feat2 = self.visual_encoder(lip2)
-                audio_feat1 = self.audio_encoder(audio, attention_mask=mask1)
-                audio_feat2 = self.audio_encoder(audio, attention_mask=mask2)
+                audio_feat1 = self.audio_encoder(audio, attention_mask=(mask1 != 3))
+                audio_feat2 = self.audio_encoder(audio, attention_mask=(mask1 != 3))
                 loss_contrast1 = contrastive_loss_with_mask(audio_feat1, mask1)
                 loss_contrast2 = contrastive_loss_with_mask(audio_feat2, mask2)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
@@ -128,7 +128,9 @@ class MultimodalTrainer:
                             true1 = self.tokenizer.decode(text1[i][:len1[i]].cpu().tolist())
                             print(f"[화자1 예측] {decoded1}", flush=True)
                             print(f"[화자1 정답] {true1}", flush=True)
-
+            except Exception as e:
+                print(f"❌ Error at batch {batch_idx}: {e}", flush=True)
+                continue
 
         return total_loss / len(dataloader)
 

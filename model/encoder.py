@@ -88,7 +88,7 @@ class AudioEncoder(nn.Module):
 
     def forward(self, x, attention_mask=None):
         # x: [B, T], attention_mask: [B, T]
-        if attention_mask is None:
-            attention_mask = (attention_mask > 0).long()  # Convert to long tensor if needed
+        if attention_mask is not None:
+            attention_mask = (attention_mask != 3).long()  # Convert to long tensor if needed
         output = self.model(input_values=x, attention_mask=attention_mask, return_dict=True)
         return output.last_hidden_state  # [B, T, output_dim]
