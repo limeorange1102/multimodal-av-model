@@ -4,10 +4,11 @@ import torch.nn.functional as F
 from jiwer import wer
 from tqdm import tqdm
 import numpy as np
+from contrastive import contrastive_loss_with_mask
 
 class MultimodalTrainer:
     def __init__(self, visual_encoder, audio_encoder, fusion_module,
-                 decoder1, tokenizer, learning_rate=1e-4, device="cuda"):
+                 decoder1, tokenizer, learning_rate=1e-4, device="cuda", lambda_=0.1):
         self.visual_encoder = visual_encoder.to(device)
         self.audio_encoder = audio_encoder.to(device)
         self.fusion_module = fusion_module.to(device)
@@ -16,6 +17,7 @@ class MultimodalTrainer:
 
         self.tokenizer = tokenizer
         self.device = device
+        self.lambda_ = lambda_
 
         self.ctc_loss = nn.CTCLoss(blank=tokenizer.blank_id, zero_infinity=True)
 
@@ -43,6 +45,7 @@ class MultimodalTrainer:
         self.audio_encoder.train()
         self.fusion_module.train()
         self.decoder1.train()
+        lambda_ = self.lambda_
 
         total_loss = 0
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="Training", ncols=100)):
@@ -51,10 +54,9 @@ class MultimodalTrainer:
 
                 lip1 = batch["lip1"].to(self.device)
                 lip2 = batch["lip2"].to(self.device)
-                audio1 = batch["audio1"].to(self.device)
-                audio2 = batch["audio2"].to(self.device)
-                audio1_mask = batch["audio1_mask"].to(self.device)
-                audio2_mask = batch["audio2_mask"].to(self.device)
+                audio = batch["audio"].to(self.device)
+                mask1 = batch["mask1"].to(self.device)
+                mask2 = batch["mask2"].to(self.device)
                 
                 text1 = batch["text1"].to(self.device)
                 len1 = batch["text1_lengths"].to(self.device)
@@ -63,8 +65,10 @@ class MultimodalTrainer:
 
                 visual_feat1 = self.visual_encoder(lip1)
                 visual_feat2 = self.visual_encoder(lip2)
-                audio_feat1 = self.audio_encoder(audio1, attention_mask=audio1_mask)
-                audio_feat2 = self.audio_encoder(audio2, attention_mask=audio2_mask)
+                audio_feat1 = self.audio_encoder(audio, attention_mask=mask1)
+                audio_feat2 = self.audio_encoder(audio, attention_mask=mask2)
+                loss_contrast1 = contrastive_loss_with_mask(audio_feat1, mask1)
+                loss_contrast2 = contrastive_loss_with_mask(audio_feat2, mask2)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
                 input_lengths1 = torch.full((fused_feat1.size(0),), fused_feat1.size(1), dtype=torch.long).to(self.device)
@@ -76,15 +80,19 @@ class MultimodalTrainer:
                 loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)
                 loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
 
-                loss = (loss1 + loss2)
-                loss.backward()
+                total_loss = (loss1 + loss2) + lambda_ * (loss_contrast1 + loss_contrast2)
+                total_loss.backward()
                 self.optimizer.step()
-                total_loss += loss.item()
+                total_loss += total_loss.item()
 
                 if batch_idx % 100 == 0:
                     pred_ids = torch.argmax(log_probs1[0], dim=-1).cpu().tolist()
                     unique_ids = sorted(set(pred_ids))
-                    print(f"🧪 [Batch {batch_idx}] Loss = {loss.item():.4f}", flush=True)
+                    print(f"[Batch {batch_idx}] "
+                        f"CTC1: {loss1.item():.4f}, CTC2: {loss2.item():.4f}, "
+                        f"Contrast1: {loss_contrast1.item():.4f}, Contrast2: {loss_contrast2.item():.4f}, "
+                        f"Total: {total_loss.item():.4f}", flush=True)
+
                     # 🔍 디코더 출력 shape 확인
                     print(f"[디버그] log_probs1.shape: {log_probs1.shape}", flush=True)
 
@@ -137,24 +145,25 @@ class MultimodalTrainer:
         with torch.no_grad():
             for batch in dataloader:
                 lip1 = batch["lip1"].to(self.device)
-                audio1 = batch["audio1"].to(self.device)
-                audio1_mask = batch["audio1_mask"].to(self.device)                
-                text1 = batch["text1"].to(self.device)
-                len1 = batch["text1_lengths"].to(self.device)
-
                 lip2 = batch["lip2"].to(self.device)
+
+                text1 = batch["text1"].to(self.device)
                 text2 = batch["text2"].to(self.device)
+
+                len1 = batch["text1_lengths"].to(self.device)
                 len2 = batch["text2_lengths"].to(self.device)
-                audio2 = batch["audio2"].to(self.device)
-                audio2_mask = batch["audio2_mask"].to(self.device)
+
+                audio = batch["audio"].to(self.device)
+                mask1 = batch["mask1"].to(self.device)
+                mask2 = batch["mask2"].to(self.device)
 
                 visual_feat1 = self.visual_encoder(lip1)                
-                audio_feat1 = self.audio_encoder(audio1, attention_mask=audio1_mask)
+                audio_feat1 = self.audio_encoder(audio, attention_mask=mask1)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
                 log_probs1 = self.decoder1(fused_feat1)
 
                 visual_feat2 = self.visual_encoder(lip2)
-                audio_feat2 = self.audio_encoder(audio2, attention_mask=audio2_mask)
+                audio_feat2 = self.audio_encoder(audio, attention_mask=mask2)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
                 log_probs2 = self.decoder1(fused_feat2)
 
