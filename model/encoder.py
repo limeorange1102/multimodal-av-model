@@ -72,25 +72,6 @@ class VisualEncoder(nn.Module):
         x = self.trunk(x)       # (B*T', 512)
         x = x.view(B, -1, 512)  # (B, T', 512)
         return x
-class VisualEncoder(nn.Module):
-    def __init__(self, relu_type='prelu'):
-        super().__init__()
-        self.frontend3D = nn.Sequential(
-            nn.Conv3d(1, 64, kernel_size=(5, 7, 7), stride=(1, 2, 2), padding=(2, 3, 3), bias=False),
-            nn.BatchNorm3d(64),
-            nn.PReLU(64) if relu_type == 'prelu' else nn.ReLU(True),
-            nn.MaxPool3d((1, 3, 3), stride=(1, 2, 2), padding=(0, 1, 1))
-        )
-        self.trunk = ResNet(BasicBlock, [2, 2, 2, 2], relu_type=relu_type)
-        self.output_dim = 512
-
-    def forward(self, x):
-        B, C, T, H, W = x.shape
-        x = self.frontend3D(x)  # (B, 64, T', H', W')
-        x = x.transpose(1, 2).contiguous().view(B * x.shape[2], 64, x.shape[3], x.shape[4])
-        x = self.trunk(x)       # (B*T', 512)
-        x = x.view(B, -1, 512)  # (B, T', 512)
-        return x
 
 # -------------------------------
 # 🎧 음성 인코더: HuggingFaceAudioEncoder
