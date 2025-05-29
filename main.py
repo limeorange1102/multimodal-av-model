@@ -18,36 +18,6 @@ import logging
 import soundfile as sf
 import imageio
 
-def save_debug_input(batch, output_dir="debug_samples", sr=16000):
-    os.makedirs(output_dir, exist_ok=True)
-
-    # 화자1 입술 영상 저장 (B, T, C, H, W) → (T, H, W, C)
-    lip1_tensor = batch["lip1"][0]  # 첫 번째 샘플만
-    lip1_frames = lip1_tensor.permute(0, 2, 3, 1).cpu().numpy()  # (T, H, W, C)
-    lip1_frames = (lip1_frames * 255).astype(np.uint8)
-
-    # mp4로 저장
-    video_path = os.path.join(output_dir, "lip1_video.mp4")
-    imageio.mimsave(video_path, lip1_frames, fps=25)
-    print(f"🎞️ 입술 영상 저장 완료: {video_path}", flush = True)
-
-    # 화자1 오디오
-    audio1 = batch["audio1"][0].cpu().numpy()
-    sf.write(os.path.join(output_dir, "audio1.wav"), audio1, sr)
-    print(f"🔊 화자1 오디오 저장 완료", flush = True)
-
-    # 화자2 오디오
-    audio2 = batch["audio2"][0].cpu().numpy()
-    sf.write(os.path.join(output_dir, "audio2.wav"), audio2, sr)
-    print(f"🔊 화자2 오디오 저장 완료", flush = True)
-
-    # 혼합 오디오 (있을 경우)
-    if "audio" in batch:
-        mix = batch["audio"][0].cpu().numpy()
-        sf.write(os.path.join(output_dir, "mix.wav"), mix, sr)
-        print(f"🔊 혼합 오디오 저장 완료", flush = True)
-
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
@@ -90,9 +60,9 @@ def main():
     set_seed()
 
     json_folder = "input_texts"
-    npy_dir = "processed_dataset/npy"
+    npy_dir = "npy"
     text_dir = "processed_dataset/text"
-    wav_dir = "input_videos"
+    wav_dir = "input_wav"
 
     tokenizer = Tokenizer(vocab_path="input_videos/tokenizer800.vocab")
     sentence_list = build_data_list(json_folder, npy_dir, text_dir, wav_dir)    
@@ -110,7 +80,6 @@ def main():
 
     train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=4, collate_fn=collate_fn)
     sample_batch = next(iter(train_loader))
-    save_debug_input(sample_batch)
     val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=4, collate_fn=collate_fn)
     test_loader = DataLoader(test_dataset, batch_size=2, shuffle=False, num_workers=2, collate_fn=collate_fn)
 
@@ -120,9 +89,9 @@ def main():
         bidirectional=True
     )
     # 🔽 best_checkpoint.pt에서 visual encoder만 불러오기
-    best_ckpt_path = "/content/drive/MyDrive/lip_audio_multimodal/checkpoints_single/last_checkpoint.pt"
+    best_ckpt_path = "/content/drive/MyDrive/lip_audio_multimodal/checkpoints_visual_loss/best_loss_encoder.pt"
     ckpt = torch.load(best_ckpt_path, map_location="cpu")
-    visual_encoder.load_state_dict(ckpt["visual_encoder"])
+    visual_encoder.load_state_dict(ckpt)
     print("✅ visual encoder loaded from best_checkpoint.pt")
 
     # 🔽 freeze

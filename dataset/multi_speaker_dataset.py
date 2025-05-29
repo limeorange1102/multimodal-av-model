@@ -9,77 +9,75 @@ class MultiSpeakerDataset(torch.utils.data.Dataset):
         self.sentence_list = sentence_list
         self.tokenizer = tokenizer
 
-    def __len__(self):
-        return len(self.sentence_list)
+    def load_pair(self, s1,s2):
+        # 1. 오디오 불러오기 및 자르기
+        a1, sr = librosa.load(s1["audio_path"], sr=16000)
+        a1 = a1[int(s1["start_time"] * sr):int(s1["end_time"] * sr)]
 
-    def __getitem__(self, idx):
-        s1, s2 = random.sample(self.sentence_list, 2)
+        a2, sr = librosa.load(s2["audio_path"], sr=16000)
+        a2 = a2[int(s2["start_time"] * sr):int(s2["end_time"] * sr)]
 
-        # Load waveforms (1D np.array)
-        a1, sr1 = librosa.load(s1["audio_path"], sr=16000)
-        a1 = a1[int(s1["start_time"] * sr1):int(s1["end_time"] * sr1)]
-
-        a2, sr2 = librosa.load(s2["audio_path"], sr=16000)
-        a2 = a2[int(s2["start_time"] * sr2):int(s2["end_time"] * sr2)]
-
-        assert sr1 == sr2, f"[오류] Sampling rates do not match! sr1={sr1}, sr2={sr2}"
-
-        a1 = np.asarray(a1).flatten()
-        a2 = np.asarray(a2).flatten()
-
-        # Pad to match length
+        # 2. padding to same length
         len1 = len(a1)
         len2 = len(a2)
+        max_len = max(len1, len2)
 
-        if len1 <= len2: #화자 1이 더 짧은 경우
-            a2_trimmed = a2[:len1]
-            mix1 = a1 + a2_trimmed
+        a1 = np.pad(a1, (0, max_len - len1), mode="constant")
+        a2 = np.pad(a2, (0, max_len - len2), mode="constant")
 
-            a1_padded = np.pad(a1, (0, len2 - len1), mode="constant")
-            mix2 = a1_padded + a2
-        else: #화자 2가 더 짧은 경우
-            a2_padded = np.pad(a2, (0, len1 - len2), mode="constant")
-            mix1 = a1 + a2_padded
+        # 3. 혼합
+        mixed = a1 + a2
+        mixed = mixed.astype(np.float32)
+        mixed /= np.max(np.abs(mixed)) + 1e-6
 
-            a1_trimmed = a1[:len2]
-            mix2 = a1_trimmed + a2
+        # 4. 마스크 생성
+        mask1 = np.zeros(max_len, dtype=np.int64)
+        mask2 = np.zeros(max_len, dtype=np.int64)
 
-        mix1 = mix1.astype(np.float32)
-        mix1 = mix1 / (np.max(np.abs(mix1)) + 1e-6)
+        min_len = min(len1, len2)
+        mask1[:min_len] = 1
+        mask2[:min_len] = 1
 
-        mix2 = mix2.astype(np.float32)
-        mix2 = mix2 / (np.max(np.abs(mix2)) + 1e-6)
+        if len1 > len2:
+            mask1[len2:len1] = 2
+        elif len2 > len1:
+            mask2[len1:len2] = 2
 
-        # Load lips
+        # 5. 입모양 npy 로딩
         try:
-            lip1_raw = np.load(s1["lip_path"])
-            lip1 = np.stack([frame for frame in lip1_raw])
-        except Exception as e:
-            print(f"❌ lip1 로딩 실패: {s1['lip_path']} - {e}")
-            return self.__getitem__(random.randint(0, len(self.sentence_list) - 1))
+            lip1 = np.load(s1["lip_path"]).astype(np.float32)
+            lip1 = lip1.mean(axis=-1)                               # grayscale (T, 128, 128)
+            lip1 = np.array([cv2.resize(f, (96, 96)) for f in lip1]) # resize
+            lip1 = lip1 / 255.0                                     # normalize
+            lip1 = torch.tensor(lip1, dtype=torch.float32).unsqueeze(1)  # (T, 1, 96, 96)
 
-        try:
-            lip2_raw = np.load(s2["lip_path"])
-            lip2 = np.stack([frame for frame in lip2_raw])
+            lip2 = np.load(s2["lip_path"]).astype(np.float32)
+            lip2 = lip2.mean(axis=-1)                               # grayscale (T, 128, 128)
+            lip2 = np.array([cv2.resize(f, (96, 96)) for f in lip2]) # resize
+            lip2 = lip2 / 255.0                                     # normalize
+            lip2 = torch.tensor(lip2, dtype=torch.float32).unsqueeze(1)  # (T, 1, 96, 96)
         except Exception as e:
-            print(f"❌ lip2 로딩 실패: {s2['lip_path']} - {e}")
-            return self.__getitem__(random.randint(0, len(self.sentence_list) - 1))
+            raise RuntimeError(f"❌ pair 로딩 실패: {e}")
+        if lip1.shape[0] == 0 or lip2.shape[0] == 0:
+            raise RuntimeError("❌ 비어 있는 입모양 npy 파일")
 
-        # Load labels
+        # 6. 라벨 로딩
         with open(s1["text_path"], "r", encoding="utf-8") as f:
             label1 = self.tokenizer.encode(f.read().strip())
         with open(s2["text_path"], "r", encoding="utf-8") as f:
             label2 = self.tokenizer.encode(f.read().strip())
 
+        # 7. 최종 반환
         return {
-            "audio1": mix1.astype(np.float32),
-            "audio2": mix2.astype(np.float32),
+            "audio": mixed,
+            "mask1": mask1,
+            "mask2": mask2,
 
-            "lip1": lip1.astype(np.float32),
+            "lip1": lip1,
             "label1": np.array(label1, dtype=np.int64),
             "lip1_len": lip1.shape[0],
 
-            "lip2": lip2.astype(np.float32),
+            "lip2": lip2,
             "label2": np.array(label2, dtype=np.int64),
             "lip2_len": lip2.shape[0],
         }
@@ -93,72 +91,28 @@ class RandomSentencePairDataset(MultiSpeakerDataset):
         return self.num_pairs_per_epoch
 
     def __getitem__(self, idx):
-        return super().__getitem__(idx)
+        for _ in range(10):
+            s1, s2 = random.sample(self.sentence_list, 2)
+            try:
+                return self.load_pair(s1, s2)
+            except Exception as e:
+                print(f"[Retry] 샘플 로딩 실패: {s1['lip_path']} / {s2['lip_path']} → {e}")
+        raise RuntimeError("❌ 최대 재시도 실패 (RandomSentencePairDataset)")
 
 class FixedSentencePairDataset(MultiSpeakerDataset): 
     def __init__(self, pair_list, tokenizer):
-        super().__init__(pair_list, tokenizer)
         self.pair_list = pair_list
+        self.tokenizer = tokenizer
 
     def __len__(self):
         return len(self.pair_list)
 
     def __getitem__(self, idx):
-        s1, s2 = self.pair_list[idx]
-
-        a1, sr1 = librosa.load(s1["audio_path"], sr=None)
-        a1 = a1[int(s1["start_time"] * sr1):int(s1["end_time"] * sr1)]
-
-        a2, sr2 = librosa.load(s2["audio_path"], sr=None)
-        a2 = a2[int(s2["start_time"] * sr2):int(s2["end_time"] * sr2)]
-
-        assert sr1 == sr2, f"[오류] Sampling rates do not match! sr1={sr1}, sr2={sr2}"
-
-        a1 = np.asarray(a1).flatten()
-        a2 = np.asarray(a2).flatten()
-
-        # Pad to match length
-        len1 = len(a1)
-        len2 = len(a2)
-
-        if len1 <= len2: #화자 1이 더 짧은 경우
-            a2_trimmed = a2[:len1]
-            mix1 = a1 + a2_trimmed
-
-            a1_padded = np.pad(a1, (0, len2 - len1), mode="constant")
-            mix2 = a1_padded + a2
-        else: #화자 2가 더 짧은 경우
-            a2_padded = np.pad(a2, (0, len1 - len2), mode="constant")
-            mix1 = a1 + a2_padded
-            
-            a1_trimmed = a1[:len2]
-            mix2 = a1_trimmed + a2
-
-        mix1 = mix1.astype(np.float32)
-        mix1 = mix1 / (np.max(np.abs(mix1)) + 1e-6)
-        mix2 = mix2.astype(np.float32)
-        mix2 = mix2 / (np.max(np.abs(mix2)) + 1e-6)
-
-        lip1 = np.load(s1["lip_path"])
-        lip1 = np.stack([frame for frame in lip1])
-
-        lip2 = np.load(s2["lip_path"])
-        lip2 = np.stack([frame for frame in lip2])
-
-        with open(s1["text_path"], "r", encoding="utf-8") as f:
-            label1 = self.tokenizer.encode(f.read().strip())
-        with open(s2["text_path"], "r", encoding="utf-8") as f:
-            label2 = self.tokenizer.encode(f.read().strip())
-
-        return {
-            "audio1": mix1.astype(np.float32),
-            "audio2": mix2.astype(np.float32),
-
-            "lip1": lip1.astype(np.float32),
-            "label1": np.array(label1, dtype=np.int64),
-            "lip1_len": lip1.shape[0],
-
-            "lip2": lip2.astype(np.float32),
-            "label2": np.array(label2, dtype=np.int64),
-            "lip2_len": lip2.shape[0],
-        }
+        for _ in range(10):
+            s1, s2 = self.pair_list[idx]
+            try:
+                return self.load_pair(s1, s2)
+            except Exception as e:
+                print(f"[Retry] 샘플 로딩 실패: {s1['lip_path']} / {s2['lip_path']} → {e}")
+                idx = (idx + 1) % len(self.pair_list)
+        raise RuntimeError("❌ 최대 재시도 실패 (FixedSentencePairDataset)")

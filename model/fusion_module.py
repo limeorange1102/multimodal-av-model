@@ -26,28 +26,33 @@ class CrossAttentionFusion(nn.Module):
             bidirectional=True
         )
 
-    def forward(self, visual_feat, audio_feat):
+    def forward(self, visual_feat, audio_feat, mask=None):
         """
         visual_feat: [B, T_v, D_v]
         audio_feat:  [B, T_a, D_a]
+        mask:        [B, T_a] — audio에 대응되는 mask (0: 무시, 1/2: 사용)
         Returns: fused_feat [B, T, fused_dim]
         """
-        T_v = visual_feat.size(1)
-        T_a = audio_feat.size(1)
+        B, T_v, _ = visual_feat.shape
+        _, T_a, _ = audio_feat.shape
 
         if T_v != T_a:
             audio_feat = F.interpolate(audio_feat.permute(0, 2, 1), size=T_v, mode='linear', align_corners=True)
             audio_feat = audio_feat.permute(0, 2, 1)
+            if mask is not None:
+                # mask도 동일하게 interpolate 해줌 (float로 변환 후 round)
+                mask = F.interpolate(mask.unsqueeze(1).float(), size=T_v, mode='nearest').squeeze(1).long()
 
         v = self.visual_proj(visual_feat)  # [B, T, D]
         a = self.audio_proj(audio_feat)    # [B, T, D]
 
-        v2a, _ = self.cross_attn_visual(query=v, key=a, value=a)  # visual attends to audio
-        a2v, _ = self.cross_attn_audio(query=a, key=v, value=v)   # audio attends to visual
+        # mask == 0인 구간 무시 (즉, 화자가 말하지 않는 구간 무시)
+        key_padding_mask = (mask == 0) | (mask == 3) if mask is not None else None # [B, T]
 
-        fused = torch.cat([v2a, a2v], dim=-1)     # [B, T, 2D]
-        fused = self.fusion_proj(fused)           # [B, T, D]
+        # visual attends to audio
+        v2a, _ = self.cross_attn_visual(query=v, key=a, value=a, key_padding_mask=key_padding_mask)
 
-        # ✅ Temporal modeling
-        fused_seq, _ = self.temporal_model(fused)  # [B, T, 2*fused_dim]
+        fused = self.fusion_proj(v2a)           # [B, T, D]
+        fused_seq, _ = self.temporal_model(fused)  # [B, T, 2*D]
         return fused_seq
+
