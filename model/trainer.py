@@ -84,12 +84,12 @@ class MultimodalTrainer:
                 audio_feat2 = self.audio_encoder(audio, attention_mask=attn_mask2)
 
                 B, T, D = audio_feat1.shape
-                audio_feat1_flat = audio_feat1.reshape(B * T, D)  # [B*T, D]
+                audio_feat1_flat = audio_feat1.view(B * T, D)  # [B*T, D]
                 B, T, D = audio_feat2.shape
-                audio_feat2_flat = audio_feat2.reshape(B * T, D)  # [B*T, D]
+                audio_feat2_flat = audio_feat2.view(B * T, D)  # [B*T, D]
 
-                mask1_flat = torch.cat([m[attn_mask1[i]] for i, m in enumerate(mask1)], dim=0)  # [N1]
-                mask2_flat = torch.cat([m[attn_mask2[i]] for i, m in enumerate(mask2)], dim=0)  # [N2]
+                mask1_flat = mask1.view(B * T)  # [B*T]
+                mask2_flat = mask2.view(B * T)
 
                 loss_contrast1 = contrastive_loss_with_mask(audio_feat1_flat, mask1_flat)
                 loss_contrast2 = contrastive_loss_with_mask(audio_feat2_flat, mask2_flat)
