@@ -157,15 +157,6 @@ def main():
         logging.info(f"\n📚 Epoch {epoch}/20")
         print(f"\n📚 Epoch {epoch}/20", flush=True)
 
-        # ✅ 조건부 VisualEncoder unfreeze
-        if epoch == 10 and not hasattr(trainer.visual_encoder, "unfrozen"):
-            for param in trainer.visual_encoder.resnet.parameters():
-                param.requires_grad = True
-            for param in trainer.visual_encoder.rnn.parameters():
-                param.requires_grad = True
-            trainer.visual_encoder.unfrozen = True
-            print(f"🧠 VisualEncoder unfrozen at epoch {epoch}")
-
         loss = trainer.train_epoch(train_loader)
         loss_history.append(loss)
 
