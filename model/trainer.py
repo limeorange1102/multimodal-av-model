@@ -52,8 +52,8 @@ class MultimodalTrainer:
             try:
                 self.optimizer.zero_grad()
 
-                lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4)  # [B, T, C, H, W] → [B, C, T, H, W]
-                lip2 = batch["lip2"].to(self.device).permute(0, 2, 1, 3, 4)
+                lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()  # [B, T, C, H, W] → [B, C, T, H, W], C=1, H, W=96
+                lip2 = batch["lip2"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()
                 audio = batch["audio"].to(self.device)
                 mask1 = batch["mask1"].to(self.device)
                 mask2 = batch["mask2"].to(self.device)
@@ -144,8 +144,8 @@ class MultimodalTrainer:
 
         with torch.no_grad():
             for batch in dataloader:
-                lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4)
-                lip2 = batch["lip2"].to(self.device).permute(0, 2, 1, 3, 4)
+                lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()
+                lip2 = batch["lip2"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()
 
                 text1 = batch["text1"].to(self.device)
                 text2 = batch["text2"].to(self.device)
