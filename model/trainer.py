@@ -47,7 +47,7 @@ class MultimodalTrainer:
         self.audio_encoder.train()
         self.fusion_module.train()
         self.decoder1.train()
-        self.projection_layer = nn.Linear(D, 128) #D = audio feature dimension, 128 = projection dimension
+        self.projection_layer = None  # projection layer for contrastive loss, if needed
         lambda_ = self.lambda_
 
         total_loss = 0
@@ -91,6 +91,9 @@ class MultimodalTrainer:
                 B, T_enc, D = audio_feat2.shape
                 mask2_ds = F.interpolate(mask2.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
                 mask2_flat = mask2_ds.reshape(B * T_enc)
+
+                if self.projection_layer is None:
+                    self.projection_layer = nn.Linear(D, 128).to(self.device)
 
                 loss_contrast1 = contrastive_loss_with_mask(audio_feat1_middle, mask1_flat, projection_layer=self.projection_layer)
                 loss_contrast2 = contrastive_loss_with_mask(audio_feat2_middle, mask2_flat, projection_layer=self.projection_layer)
