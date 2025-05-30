@@ -5,14 +5,21 @@ TEMPERATURE = 0.07
 WEIGHT_POS_ALIGN = 1.0
 WEIGHT_NEG_SUPPRESS = 0.3
 
-def contrastive_loss_with_mask(flat_feat, flat_mask):
-    device = flat_feat.device
+def contrastive_loss_with_mask(middle_feat, flat_mask, projection_layer=None):
+    device = middle_feat.device
+    B, T_enc, D = middle_feat.shape
+    flat_feat = middle_feat.reshape(B * T_enc, D)  # [B*T_enc, D]
 
     # mask == 3 제거
     valid_mask = flat_mask != 3
     flat_feat = flat_feat[valid_mask]
-    flat_feat = F.normalize(flat_feat, dim=1)
     flat_mask = flat_mask[valid_mask]
+
+    if projection_layer is not None:
+        flat_feat = projection_layer(flat_feat)
+
+    flat_feat = F.normalize(flat_feat, dim=1)
+
 
     pos_strong_idx = torch.nonzero(flat_mask == 2).squeeze(1)
     pos_weak_idx = torch.nonzero(flat_mask == 1).squeeze(1)

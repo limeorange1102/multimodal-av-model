@@ -47,6 +47,7 @@ class MultimodalTrainer:
         self.audio_encoder.train()
         self.fusion_module.train()
         self.decoder1.train()
+        self.projection_layer = nn.Linear(D, 128) #D = audio feature dimension, 128 = projection dimension
         lambda_ = self.lambda_
 
         total_loss = 0
@@ -80,21 +81,19 @@ class MultimodalTrainer:
                 visual_feat2 = self.visual_encoder(lip2)
                 attn_mask1 = (mask1 != 3)
                 attn_mask2 = (mask2 != 3)
-                audio_feat1 = self.audio_encoder(audio, attention_mask=attn_mask1)
-                audio_feat2 = self.audio_encoder(audio, attention_mask=attn_mask2)
+                audio_feat1, audio_feat1_middle = self.audio_encoder(audio, attention_mask=attn_mask1)
+                audio_feat2, audio_feat2_middle = self.audio_encoder(audio, attention_mask=attn_mask2)
 
                 B, T_enc, D = audio_feat1.shape
                 mask1_ds = F.interpolate(mask1.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()  # [B, T_enc]
-                audio_feat1_flat = audio_feat1.reshape(B * T_enc, D)  # [B*T_enc, D]
                 mask1_flat = mask1_ds.reshape(B * T_enc)  # [B*T_enc]
 
                 B, T_enc, D = audio_feat2.shape
                 mask2_ds = F.interpolate(mask2.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
-                audio_feat2_flat = audio_feat2.reshape(B * T_enc, D)
                 mask2_flat = mask2_ds.reshape(B * T_enc)
 
-                loss_contrast1 = contrastive_loss_with_mask(audio_feat1_flat, mask1_flat)
-                loss_contrast2 = contrastive_loss_with_mask(audio_feat2_flat, mask2_flat)
+                loss_contrast1 = contrastive_loss_with_mask(audio_feat1_middle, mask1_flat, projection_layer=self.projection_layer)
+                loss_contrast2 = contrastive_loss_with_mask(audio_feat2_middle, mask2_flat, projection_layer=self.projection_layer)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
                 input_lengths1 = torch.full((fused_feat1.size(0),), fused_feat1.size(1), dtype=torch.long).to(self.device)

@@ -80,7 +80,7 @@ class VisualEncoder(nn.Module):
 class AudioEncoder(nn.Module):
     def __init__(self, model_name="kresnik/wav2vec2-large-xlsr-korean", freeze=True):
         super().__init__()
-        self.model = Wav2Vec2Model.from_pretrained(model_name)
+        self.model = Wav2Vec2Model.from_pretrained(model_name, output_hidden_states=True)
         self.output_dim = self.model.config.hidden_size
         if freeze:
             for param in self.model.parameters():
@@ -91,4 +91,11 @@ class AudioEncoder(nn.Module):
         if attention_mask is not None:
             attention_mask = attention_mask.long()  # Convert to long tensor if needed
         output = self.model(input_values=x, attention_mask=attention_mask, return_dict=True)
-        return output.last_hidden_state  # [B, T', output_dim = 1024]
+        hidden_states = output.hidden_states  # tuple of 25 tensors: [B, T, D]
+
+        # 중간 레이어 추출 및 평균
+        selected_states = hidden_states[8:15]  # 8-15번째 레이어 선택
+        stacked = torch.stack(selected_states, dim=0)  # [L, B, T, D]
+        mean_feature = stacked.mean(dim=0)             # [B, T, D] 중간 레이어 output의 평균 
+        return output.last_hidden_state, mean_feature  # [B, T', D = 1024]
+    
