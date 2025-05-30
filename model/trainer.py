@@ -57,7 +57,7 @@ class MultimodalTrainer:
                 lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()  # [B, T, C, H, W] → [B, C, T, H, W], C=1, H, W=96
                 lip2 = batch["lip2"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()
                 audio = batch["audio"].to(self.device)
-                mask1 = batch["mask1"].to(self.device)
+                mask1 = batch["mask1"].to(self.device) # [B, T_audio]
                 mask2 = batch["mask2"].to(self.device)
                 
                 text1 = batch["text1"].to(self.device)
@@ -83,13 +83,15 @@ class MultimodalTrainer:
                 audio_feat1 = self.audio_encoder(audio, attention_mask=attn_mask1)
                 audio_feat2 = self.audio_encoder(audio, attention_mask=attn_mask2)
 
-                B, T, D = audio_feat1.shape
-                audio_feat1_flat = audio_feat1.view(B * T, D)  # [B*T, D]
-                B, T, D = audio_feat2.shape
-                audio_feat2_flat = audio_feat2.view(B * T, D)  # [B*T, D]
+                B, T_enc, D = audio_feat1.shape
+                mask1_ds = F.interpolate(mask1.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()  # [B, T_enc]
+                audio_feat1_flat = audio_feat1.reshape(B * T_enc, D)  # [B*T_enc, D]
+                mask1_flat = mask1_ds.reshape(B * T_enc)  # [B*T_enc]
 
-                mask1_flat = mask1.view(B * T)  # [B*T]
-                mask2_flat = mask2.view(B * T)
+                B, T_enc, D = audio_feat2.shape
+                mask2_ds = F.interpolate(mask2.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
+                audio_feat2_flat = audio_feat2.reshape(B * T_enc, D)
+                mask2_flat = mask2_ds.reshape(B * T_enc)
 
                 loss_contrast1 = contrastive_loss_with_mask(audio_feat1_flat, mask1_flat)
                 loss_contrast2 = contrastive_loss_with_mask(audio_feat2_flat, mask2_flat)

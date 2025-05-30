@@ -30,7 +30,7 @@ class CrossAttentionFusion(nn.Module):
         """
         visual_feat: [B, T_v, D_v]
         audio_feat:  [B, T_a, D_a]
-        mask:        [B, T_a] — audio에 대응되는 mask (0: 무시, 1/2: 사용)
+        mask:        [B, T_a] — audio에 대응되는 mask (0/3: 무시, 1/2: 사용)
         Returns: fused_feat [B, T, fused_dim]
         """
         B, T_v, _ = visual_feat.shape
@@ -46,7 +46,7 @@ class CrossAttentionFusion(nn.Module):
         v = self.visual_proj(visual_feat)  # [B, T, D]
         a = self.audio_proj(audio_feat)    # [B, T, D]
 
-        # mask == 0인 구간 무시 (즉, 화자가 말하지 않는 구간 무시)
+        # mask == 0, 3인 구간 무시 (즉, 화자가 말하지 않는 구간 무시)
         key_padding_mask = (mask == 0) | (mask == 3) if mask is not None else None # [B, T]
 
         # visual attends to audio

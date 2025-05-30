@@ -23,6 +23,13 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+def unfreeze_last_n_layers(model, n=3):
+    for name, param in model.named_parameters():
+        if any(f"encoder.layers.{i}." in name for i in range(12 - n, 12)):
+            param.requires_grad = True
+        else:
+            param.requires_grad = False
+
 def set_seed(seed=42):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -96,6 +103,7 @@ def main():
         param.requires_grad = False
 
     audio_encoder = AudioEncoder(freeze=True)
+    unfreeze_last_n_layers(audio_encoder.model)
 
     fusion = CrossAttentionFusion(
         visual_dim=visual_encoder.output_dim,
