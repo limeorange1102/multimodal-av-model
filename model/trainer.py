@@ -123,7 +123,6 @@ class MultimodalTrainer:
                     print(f"[디버그] log_probs1.shape: {log_probs1.shape}", flush=True)
 
                     # 🔍 softmax 확률 평균 분포 분석
-                    import torch.nn.functional as F
                     probs = F.softmax(log_probs1[0], dim=-1)  # shape: [T, V]
                     mean_probs = probs.mean(dim=0).detach().cpu().numpy()  # 각 토큰 평균 확률
                     top_ids = mean_probs.argsort()[-10:][::-1]  # 상위 10개 토큰
