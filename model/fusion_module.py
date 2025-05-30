@@ -15,7 +15,7 @@ class CrossAttentionFusion(nn.Module):
         self.cross_attn_audio = nn.MultiheadAttention(embed_dim=fused_dim, num_heads=num_heads, batch_first=True)
 
         # Step 3: concat된 결과를 하나의 fused vector로 projection
-        self.fusion_proj = nn.Linear(fused_dim * 2, fused_dim)
+        self.fusion_proj = nn.Linear(fused_dim, fused_dim)
 
         # ✅ Step 4: Temporal modeling (BiLSTM + projection)
         self.temporal_model = nn.LSTM(
