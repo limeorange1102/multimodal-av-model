@@ -143,12 +143,17 @@ class MultimodalTrainer:
                     
                     with torch.no_grad():
                         pred1_ids = torch.argmax(log_probs1, dim=-1)
-                        for i in range(min(2, pred1_ids.size(0))):
-                            pred_ids1 = self.ctc_decode(pred1_ids[i].cpu().tolist())
-                            decoded1 = self.tokenizer.decode(pred_ids1)
-                            true1 = self.tokenizer.decode(text1[i][:len1[i]].cpu().tolist())
-                            print(f"[화자1 예측] {decoded1}", flush=True)
-                            print(f"[화자1 정답] {true1}", flush=True)
+                        pred2_ids = torch.argmax(log_probs2, dim=-1)
+
+                        decoded_pred1 = self.tokenizer.decode(self.ctc_decode(pred1_ids[0].cpu().tolist()))
+                        decoded_true1 = self.tokenizer.decode(text1[0][:len1[0]].cpu().tolist())
+                        decoded_pred2 = self.tokenizer.decode(self.ctc_decode(pred2_ids[0].cpu().tolist()))
+                        decoded_true2 = self.tokenizer.decode(text2[0][:len2[0]].cpu().tolist())
+
+                        print(f"[화자1 예측] {decoded_pred1}", flush=True)
+                        print(f"[화자1 정답] {decoded_true1}", flush=True)
+                        print(f"[화자2 예측] {decoded_pred2}", flush=True)
+                        print(f"[화자2 정답] {decoded_true2}", flush=True)
             except Exception as e:
                 print(f"❌ Error at batch {batch_idx}: {e}", flush=True)
                 continue
