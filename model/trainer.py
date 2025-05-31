@@ -223,11 +223,11 @@ class MultimodalTrainer:
                     loss1 = self.ctc_loss(log_probs1[i].unsqueeze(0), 
                                           text1[i].unsqueeze(0), 
                                           input_lengths1[i:i+1],
-                                          len1[i].unsqueeze(0))                
+                                          len1[i:i+1])                
                     loss2 = self.ctc_loss(log_probs2[i].unsqueeze(0), 
                                           text2[i].unsqueeze(0), 
-                                          input_lengths2[i].unsqueeze(0), 
-                                          len2[i].unsqueeze(0))
+                                          input_lengths2[i:i+1], 
+                                          len2[i:i+1])
                     total_loss += (loss1.item() + loss2.item()) / 2
 
         wer1 = wer(all_refs1, all_hyps1)
