@@ -206,14 +206,14 @@ class MultimodalTrainer:
 
                 for i in range(log_probs1.size(0)):
                     pred_ids1 = simple_beam_search(log_probs1[i], beam_width=5, blank=self.tokenizer.blank_id)
-                    decoded1 = self.tokenizer.decode(fast_decode(pred_ids1, self.tokenizer))
+                    decoded1 = fast_decode(pred_ids1, self.tokenizer)
                     label_ids1 = text1[i][:len1[i]].cpu().tolist()
                     true_text1 = self.tokenizer.decode(label_ids1)
                     all_refs1.append(true_text1)
                     all_hyps1.append(decoded1)
 
                     pred_ids2 = simple_beam_search(log_probs2[i], beam_width=5, blank=self.tokenizer.blank_id)
-                    decoded2 = self.tokenizer.decode(fast_decode(pred_ids2, self.tokenizer))
+                    decoded2 = fast_decode(pred_ids2, self.tokenizer)
                     label_ids2 = text2[i][:len2[i]].cpu().tolist()
                     true_text2 = self.tokenizer.decode(label_ids2)
                     all_refs2.append(true_text2)
