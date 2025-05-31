@@ -6,6 +6,8 @@ from tqdm import tqdm
 import numpy as np
 from contrastive import contrastive_loss_with_mask
 from beam_search import simple_beam_search, fast_decode
+from torch.cuda.amp import autocast, GradScaler
+
 
 class MultimodalTrainer:
     def __init__(self, visual_encoder, audio_encoder, fusion_module,
@@ -30,6 +32,7 @@ class MultimodalTrainer:
         )
 
         self.optimizer = torch.optim.Adam(self.parameters, lr=learning_rate)
+        self.scaler = GradScaler()  # For mixed precision training
 
     def crop_or_pad_feat(self, feat, target_len):
         if feat.size(0) >= target_len:
@@ -54,63 +57,65 @@ class MultimodalTrainer:
         for batch_idx, batch in enumerate(tqdm(dataloader, desc="Training", ncols=100)):
             try:
                 self.optimizer.zero_grad()
+                with autocast():  # Mixed precision training
+                    lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()  # [B, T, C, H, W] → [B, C, T, H, W], C=1, H, W=96
+                    lip2 = batch["lip2"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()
+                    audio = batch["audio"].to(self.device)
+                    mask1 = batch["mask1"].to(self.device) # [B, T_audio]
+                    mask2 = batch["mask2"].to(self.device)
+                    
+                    text1 = batch["text1"].to(self.device)
+                    len1 = batch["text1_lengths"].to(self.device)
+                    text2 = batch["text2"].to(self.device)
+                    len2 = batch["text2_lengths"].to(self.device)
 
-                lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()  # [B, T, C, H, W] → [B, C, T, H, W], C=1, H, W=96
-                lip2 = batch["lip2"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()
-                audio = batch["audio"].to(self.device)
-                mask1 = batch["mask1"].to(self.device) # [B, T_audio]
-                mask2 = batch["mask2"].to(self.device)
-                
-                text1 = batch["text1"].to(self.device)
-                len1 = batch["text1_lengths"].to(self.device)
-                text2 = batch["text2"].to(self.device)
-                len2 = batch["text2_lengths"].to(self.device)
+                    for i in range(text1.size(0)):
+                        if len1[i] == 0:
+                            print(f"[디버그] 🚨 text1[{i}] 길이가 0입니다. 라벨: {text1[i].tolist()}", flush = True)
 
-                for i in range(text1.size(0)):
-                    if len1[i] == 0:
-                        print(f"[디버그] 🚨 text1[{i}] 길이가 0입니다. 라벨: {text1[i].tolist()}", flush = True)
+                        if text1[i].max() >= self.tokenizer.vocab_size:
+                            print(f"[디버그] 🚨 text1[{i}]에 vocab_size 이상 값 존재: {text1[i].tolist()}", flush = True)
 
-                    if text1[i].max() >= self.tokenizer.vocab_size:
-                        print(f"[디버그] 🚨 text1[{i}]에 vocab_size 이상 값 존재: {text1[i].tolist()}", flush = True)
-
-                    if text1[i].min() < 0:
-                        print(f"[디버그] 🚨 text1[{i}]에 음수 인덱스 존재: {text1[i].tolist()}", flush = True)
+                        if text1[i].min() < 0:
+                            print(f"[디버그] 🚨 text1[{i}]에 음수 인덱스 존재: {text1[i].tolist()}", flush = True)
 
 
-                visual_feat1 = self.visual_encoder(lip1)
-                visual_feat2 = self.visual_encoder(lip2)
-                attn_mask1 = (mask1 != 3)
-                attn_mask2 = (mask2 != 3)
-                audio_feat1, audio_feat1_middle = self.audio_encoder(audio, attention_mask=attn_mask1)
-                audio_feat2, audio_feat2_middle = self.audio_encoder(audio, attention_mask=attn_mask2)
+                    visual_feat1 = self.visual_encoder(lip1)
+                    visual_feat2 = self.visual_encoder(lip2)
+                    attn_mask1 = (mask1 != 3)
+                    attn_mask2 = (mask2 != 3)
+                    audio_feat1, audio_feat1_middle = self.audio_encoder(audio, attention_mask=attn_mask1)
+                    audio_feat2, audio_feat2_middle = self.audio_encoder(audio, attention_mask=attn_mask2)
 
-                B, T_enc, D = audio_feat1.shape
-                mask1_ds = F.interpolate(mask1.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()  # [B, T_enc]
-                mask1_flat = mask1_ds.reshape(B * T_enc)  # [B*T_enc]
+                    B, T_enc, D = audio_feat1.shape
+                    mask1_ds = F.interpolate(mask1.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()  # [B, T_enc]
+                    mask1_flat = mask1_ds.reshape(B * T_enc)  # [B*T_enc]
 
-                B, T_enc, D = audio_feat2.shape
-                mask2_ds = F.interpolate(mask2.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
-                mask2_flat = mask2_ds.reshape(B * T_enc)
+                    B, T_enc, D = audio_feat2.shape
+                    mask2_ds = F.interpolate(mask2.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
+                    mask2_flat = mask2_ds.reshape(B * T_enc)
 
-                if self.projection_layer is None:
-                    self.projection_layer = nn.Linear(D, 128).to(self.device)
+                    if self.projection_layer is None:
+                        self.projection_layer = nn.Linear(D, 128).to(self.device)
 
-                loss_contrast1 = contrastive_loss_with_mask(audio_feat1_middle, mask1_flat, projection_layer=self.projection_layer)
-                loss_contrast2 = contrastive_loss_with_mask(audio_feat2_middle, mask2_flat, projection_layer=self.projection_layer)
-                fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
-                fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
-                input_lengths1 = torch.full((fused_feat1.size(0),), fused_feat1.size(1), dtype=torch.long).to(self.device)
-                input_lengths2 = torch.full((fused_feat2.size(0),), fused_feat2.size(1), dtype=torch.long).to(self.device)
+                    loss_contrast1 = contrastive_loss_with_mask(audio_feat1_middle, mask1_flat, projection_layer=self.projection_layer)
+                    loss_contrast2 = contrastive_loss_with_mask(audio_feat2_middle, mask2_flat, projection_layer=self.projection_layer)
+                    fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
+                    fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
+                    input_lengths1 = torch.full((fused_feat1.size(0),), fused_feat1.size(1), dtype=torch.long).to(self.device)
+                    input_lengths2 = torch.full((fused_feat2.size(0),), fused_feat2.size(1), dtype=torch.long).to(self.device)
 
-                log_probs1 = self.decoder1(fused_feat1)
-                log_probs2 = self.decoder1(fused_feat2)
+                    log_probs1 = self.decoder1(fused_feat1)
+                    log_probs2 = self.decoder1(fused_feat2)
 
-                loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)
-                loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
+                    loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)
+                    loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
 
-                loss_total = (loss1 + loss2)/2 + lambda_ * (loss_contrast1 + loss_contrast2)/2
-                loss_total.backward()
-                self.optimizer.step()
+                    loss_total = (loss1 + loss2)/2 + lambda_ * (loss_contrast1 + loss_contrast2)/2
+
+                self.scaler.scale(loss_total).backward()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
 
                 total_loss += loss_total.item()
 
