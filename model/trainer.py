@@ -204,6 +204,11 @@ class MultimodalTrainer:
                 input_lengths1 = torch.full(size=(log_probs1.size(0),), fill_value=log_probs1.size(1), dtype=torch.long).to(self.device)
                 input_lengths2 = torch.full(size=(log_probs2.size(0),), fill_value=log_probs2.size(1), dtype=torch.long).to(self.device)
 
+                # Loss 계산은 argmax 기반 log_probs 사용
+                loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)           
+                loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
+                total_loss += (loss1.item() + loss2.item()) / 2
+
 
                 for i in range(log_probs1.size(0)):
                     pred_ids1 = simple_beam_search(log_probs1[i], beam_width=5, blank=self.tokenizer.blank_id)
@@ -220,10 +225,7 @@ class MultimodalTrainer:
                     all_refs2.append(true_text2)
                     all_hyps2.append(decoded2)
 
-                    # Loss 계산은 argmax 기반 log_probs 사용
-                    loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)           
-                    loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
-                    total_loss += (loss1.item() + loss2.item()) / 2
+
 
         wer1 = wer(all_refs1, all_hyps1)
         wer2 = wer(all_refs2, all_hyps2)
