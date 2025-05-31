@@ -108,7 +108,7 @@ class MultimodalTrainer:
                 loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)
                 loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
 
-                loss_total = (loss1 + loss2) + lambda_ * (loss_contrast1 + loss_contrast2)
+                loss_total = (loss1 + loss2)/2 + lambda_ * (loss_contrast1 + loss_contrast2)/2
                 loss_total.backward()
                 self.optimizer.step()
 
