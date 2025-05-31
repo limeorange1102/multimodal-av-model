@@ -85,7 +85,7 @@ def main():
     test_pairs = generate_fixed_pairs(test_set, n_pairs=500)
     test_dataset = FixedSentencePairDataset(test_pairs, tokenizer)
 
-    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=8, collate_fn=collate_fn)
+    train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, num_workers=4, collate_fn=collate_fn)
     val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False, num_workers=4, collate_fn=collate_fn)
     test_loader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=4, collate_fn=collate_fn)
 
