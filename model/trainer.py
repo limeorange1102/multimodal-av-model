@@ -188,14 +188,14 @@ class MultimodalTrainer:
 
                 visual_feat1 = self.visual_encoder(lip1)   
                 attn_mask1 = (mask1 != 3)             
-                audio_feat1 = self.audio_encoder(audio, attention_mask=attn_mask1)
+                audio_feat1, _ = self.audio_encoder(audio, attention_mask=attn_mask1)
                 fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
                 log_probs1 = self.decoder1(fused_feat1) #(log_probs1.shape: [B, T, V])
                 log_probs1 = F.log_softmax(log_probs1, dim=-1)  # log softmax for CTC
 
                 visual_feat2 = self.visual_encoder(lip2)
                 attn_mask2 = (mask2 != 3)
-                audio_feat2 = self.audio_encoder(audio, attention_mask=attn_mask2)
+                audio_feat2, _ = self.audio_encoder(audio, attention_mask=attn_mask2)
                 fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
                 log_probs2 = self.decoder1(fused_feat2)
                 log_probs2 = F.log_softmax(log_probs2, dim=-1)
