@@ -173,7 +173,7 @@ class MultimodalTrainer:
 
         with torch.no_grad():
             for batch in tqdm(dataloader, desc="Evaluating", unit= "batch"):
-                lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()
+                lip1 = batch["lip1"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()  # [B, T, C, H, W] → [B, C, T, H, W], C=1, H, W=96
                 lip2 = batch["lip2"].to(self.device).permute(0, 2, 1, 3, 4).contiguous()
 
                 text1 = batch["text1"].to(self.device)
@@ -183,7 +183,7 @@ class MultimodalTrainer:
                 len2 = batch["text2_lengths"].to(self.device)
 
                 audio = batch["audio"].to(self.device)
-                mask1 = batch["mask1"].to(self.device)
+                mask1 = batch["mask1"].to(self.device)  # [B, T_audio]
                 mask2 = batch["mask2"].to(self.device)
 
                 visual_feat1 = self.visual_encoder(lip1)   
@@ -220,14 +220,8 @@ class MultimodalTrainer:
                     all_hyps2.append(decoded2)
 
                     # Loss 계산은 argmax 기반 log_probs 사용
-                    loss1 = self.ctc_loss(log_probs1[i].unsqueeze(0), 
-                                          text1[i].unsqueeze(0), 
-                                          input_lengths1[i:i+1],
-                                          len1[i:i+1])                
-                    loss2 = self.ctc_loss(log_probs2[i].unsqueeze(0), 
-                                          text2[i].unsqueeze(0), 
-                                          input_lengths2[i:i+1], 
-                                          len2[i:i+1])
+                    loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)           
+                    loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
                     total_loss += (loss1.item() + loss2.item()) / 2
 
         wer1 = wer(all_refs1, all_hyps1)
