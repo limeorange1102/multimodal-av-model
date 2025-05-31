@@ -230,7 +230,7 @@ class MultimodalTrainer:
         wer1 = wer(all_refs1, all_hyps1)
         wer2 = wer(all_refs2, all_hyps2)
         avg_wer = (wer1 + wer2) / 2
-        avg_loss = total_loss / len(dataloader.dataset)
+        avg_loss = total_loss / len(dataloader)
 
         print(f"[Eval] WER1: {wer1:.3f}, WER2: {wer2:.3f}, Avg: {avg_wer:.3f}, Loss: {avg_loss:.4f}")
         return avg_loss, avg_wer
