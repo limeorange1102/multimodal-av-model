@@ -108,10 +108,11 @@ class MultimodalTrainer:
                 loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)
                 loss2 = self.ctc_loss(log_probs2.transpose(0, 1), text2, input_lengths2, len2)
 
-                total_loss = (loss1 + loss2) + lambda_ * (loss_contrast1 + loss_contrast2)
-                total_loss.backward()
+                loss_total = (loss1 + loss2) + lambda_ * (loss_contrast1 + loss_contrast2)
+                loss_total.backward()
                 self.optimizer.step()
-                total_loss += total_loss.item()
+
+                total_loss += loss_total.item()
 
                 if batch_idx % 100 == 0:
                     pred_ids = torch.argmax(log_probs1[0], dim=-1).cpu().tolist()
@@ -119,7 +120,7 @@ class MultimodalTrainer:
                     print(f"[Batch {batch_idx}] "
                         f"CTC1: {loss1.item():.4f}, CTC2: {loss2.item():.4f}, "
                         f"Contrast1: {loss_contrast1.item():.4f}, Contrast2: {loss_contrast2.item():.4f}, "
-                        f"Total: {total_loss.item():.4f}", flush=True)
+                        f"Total: {loss_total.item():.4f}", flush=True)
 
                     # 🔍 디코더 출력 shape 확인
                     print(f"[디버그] log_probs1.shape: {log_probs1.shape}", flush=True)
