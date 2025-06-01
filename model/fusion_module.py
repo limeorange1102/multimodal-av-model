@@ -29,12 +29,23 @@ class CrossAttentionFusion(nn.Module):
     def forward(self, visual_feat, audio_feat, mask=None):
         """
         visual_feat: [B, T_v, D_v]
-        audio_feat:  [B, T_a, D_a]
+        audio_feat:  [B, T_a, D_a] -> T_a = 혼합 음성 길이
         mask:        [B, T_a] — audio에 대응되는 mask (0/3: 무시, 1/2: 사용)
         Returns: fused_feat [B, T, fused_dim]
         """
         B, T_v, _ = visual_feat.shape
         _, T_a, _ = audio_feat.shape
+
+        #mask == 0,3인 구간 무시
+        speech_mask = (mask != 0) & (mask != 3) if mask is not None else None #[B, T_a] -> Boolean mask
+        masked_audio_feats = []
+        new_mask = []
+        for i in range(B): 
+            masked_audio_feats.append(audio_feat[i][speech_mask[i]])
+            new_mask.append(mask[i][speech_mask[i]])
+        audio_feat = torch.nn.utils.rnn.pad_sequence(masked_audio_feats, batch_first=True)
+        mask = torch.nn.utils.rnn.pad_sequence(new_mask, batch_first=True) if mask is not None else None
+        T_a = audio_feat.shape[1]  # 업데이트된 T_a
 
         if T_v != T_a:
             audio_feat = F.interpolate(audio_feat.permute(0, 2, 1), size=T_v, mode='linear', align_corners=True)
@@ -46,13 +57,12 @@ class CrossAttentionFusion(nn.Module):
         v = self.visual_proj(visual_feat)  # [B, T, D]
         a = self.audio_proj(audio_feat)    # [B, T, D]
 
-        # mask == 0, 3인 구간 무시 (즉, 화자가 말하지 않는 구간 무시)
-        key_padding_mask = (mask == 0) | (mask == 3) if mask is not None else None # [B, T]
-
         # audio attends to visual
-        a2v, _ = self.cross_attn_audio(query=a, key=v, value=v, key_padding_mask=key_padding_mask)
+        a2v, _ = self.cross_attn_audio(query=a, key=v, value=v)
 
         fused = self.fusion_proj(a2v)           # [B, T, D]
         fused_seq, _ = self.temporal_model(fused)  # [B, T, 2*D]
-        return fused_seq
+
+        input_lengths = torch.tensor([(m != 0).sum().item() for m in mask], device=mask.device)
+        return fused_seq, input_lengths  # [B, T, 2*D], [B]
 

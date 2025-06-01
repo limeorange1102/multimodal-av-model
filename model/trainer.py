@@ -85,13 +85,9 @@ class MultimodalTrainer:
 
                     attn_mask1 = (mask1 != 3)
                     attn_mask2 = (mask2 != 3)
-                    speach_mask1 = (mask1 != 0) & (mask1 != 3)  # [B, T_audio]
-                    speach_mask2 = (mask2 != 0) & (mask2 != 3)
 
-                    audio_feat1, _ = self.audio_encoder(audio, attention_mask=speach_mask1)
-                    _, audio_feat1_middle = self.audio_encoder(audio, attention_mask=attn_mask1)
-                    audio_feat2, _ = self.audio_encoder(audio, attention_mask=speach_mask2)
-                    _, audio_feat2_middle = self.audio_encoder(audio, attention_mask=attn_mask2)
+                    audio_feat1, audio_feat1_middle = self.audio_encoder(audio, attention_mask=attn_mask1)
+                    audio_feat2, audio_feat2_middle = self.audio_encoder(audio, attention_mask=attn_mask2)
 
                     B, T_enc, D = audio_feat1.shape
                     mask1_ds = F.interpolate(mask1.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()  # [B, T_enc]
@@ -106,10 +102,8 @@ class MultimodalTrainer:
 
                     loss_contrast1 = contrastive_loss_with_mask(audio_feat1_middle, mask1_flat, projection_layer=self.projection_layer)
                     loss_contrast2 = contrastive_loss_with_mask(audio_feat2_middle, mask2_flat, projection_layer=self.projection_layer)
-                    fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
-                    fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
-                    input_lengths1 = torch.full((fused_feat1.size(0),), fused_feat1.size(1), dtype=torch.long).to(self.device)
-                    input_lengths2 = torch.full((fused_feat2.size(0),), fused_feat2.size(1), dtype=torch.long).to(self.device)
+                    fused_feat1, input_lengths1 = self.fusion_module(visual_feat1, audio_feat1, mask = mask1_ds)
+                    fused_feat2, input_lengths2 = self.fusion_module(visual_feat2, audio_feat2, mask = mask2_ds)
 
                     log_probs1 = self.decoder1(fused_feat1)
                     log_probs2 = self.decoder1(fused_feat2)
@@ -203,22 +197,25 @@ class MultimodalTrainer:
                 mask1 = batch["mask1"].to(self.device)  # [B, T_audio]
                 mask2 = batch["mask2"].to(self.device)
 
+                B, T_enc, D = audio_feat1.shape
+                mask1_ds = F.interpolate(mask1.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
+
+                B, T_enc, D = audio_feat2.shape
+                mask2_ds = F.interpolate(mask2.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
+
                 visual_feat1 = self.visual_encoder(lip1)   
-                attn_mask1 = (mask1 != 3) & (mask1 != 0)     #Boolean mask for attention
+                attn_mask1 = (mask1 != 3)   #Boolean mask for attention
                 audio_feat1, _ = self.audio_encoder(audio, attention_mask=attn_mask1)
-                fused_feat1 = self.fusion_module(visual_feat1, audio_feat1)
+                fused_feat1, input_lengths1 = self.fusion_module(visual_feat1, audio_feat1, mask1_ds)
                 log_probs1 = self.decoder1(fused_feat1) #(log_probs1.shape: [B, T, V])
                 log_probs1 = F.log_softmax(log_probs1, dim=-1)  # log softmax for CTC
 
                 visual_feat2 = self.visual_encoder(lip2)
-                attn_mask2 = (mask2 != 3) & (mask2 != 0)  # Boolean mask for attention
+                attn_mask2 = (mask2 != 3)  # Boolean mask for attention
                 audio_feat2, _ = self.audio_encoder(audio, attention_mask=attn_mask2)
-                fused_feat2 = self.fusion_module(visual_feat2, audio_feat2)
+                fused_feat2, input_lengths2 = self.fusion_module(visual_feat2, audio_feat2, mask2_ds)
                 log_probs2 = self.decoder1(fused_feat2)
                 log_probs2 = F.log_softmax(log_probs2, dim=-1)
-
-                input_lengths1 = torch.full(size=(log_probs1.size(0),), fill_value=log_probs1.size(1), dtype=torch.long).to(self.device)
-                input_lengths2 = torch.full(size=(log_probs2.size(0),), fill_value=log_probs2.size(1), dtype=torch.long).to(self.device)
 
                 # Loss 계산은 argmax 기반 log_probs 사용
                 loss1 = self.ctc_loss(log_probs1.transpose(0, 1), text1, input_lengths1, len1)           
