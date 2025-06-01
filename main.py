@@ -162,11 +162,11 @@ def main():
     for epoch in range(start_epoch, max_epoch + 1):
         logging.info(f"\n📚 Epoch {epoch}/20")
         print(f"\n📚 Epoch {epoch}/20", flush=True)
-        
+        eval_loss, eval_wer = trainer.evaluate(val_loader)
         loss = trainer.train_epoch(train_loader)
         loss_history.append(loss)
 
-        eval_loss, eval_wer = trainer.evaluate(val_loader)
+        
         loss_history.append(eval_loss)
         wer_history.append(eval_wer)
 

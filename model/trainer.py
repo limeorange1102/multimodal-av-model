@@ -195,17 +195,13 @@ class MultimodalTrainer:
 
                 audio = batch["audio"].to(self.device)
                 mask1 = batch["mask1"].to(self.device)  # [B, T_audio]
-                mask2 = batch["mask2"].to(self.device)
-
-                B, T_enc, D = audio_feat1.shape
-                mask1_ds = F.interpolate(mask1.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
-
-                B, T_enc, D = audio_feat2.shape
-                mask2_ds = F.interpolate(mask2.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
+                mask2 = batch["mask2"].to(self.device)                
 
                 visual_feat1 = self.visual_encoder(lip1)   
                 attn_mask1 = (mask1 != 3)   #Boolean mask for attention
                 audio_feat1, _ = self.audio_encoder(audio, attention_mask=attn_mask1)
+                B, T_enc, D = audio_feat1.shape
+                mask1_ds = F.interpolate(mask1.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
                 fused_feat1, input_lengths1 = self.fusion_module(visual_feat1, audio_feat1, mask1_ds)
                 log_probs1 = self.decoder1(fused_feat1) #(log_probs1.shape: [B, T, V])
                 log_probs1 = F.log_softmax(log_probs1, dim=-1)  # log softmax for CTC
@@ -213,6 +209,8 @@ class MultimodalTrainer:
                 visual_feat2 = self.visual_encoder(lip2)
                 attn_mask2 = (mask2 != 3)  # Boolean mask for attention
                 audio_feat2, _ = self.audio_encoder(audio, attention_mask=attn_mask2)
+                B, T_enc, D = audio_feat2.shape
+                mask2_ds = F.interpolate(mask2.unsqueeze(1).float(), size=T_enc, mode='nearest').squeeze(1).long()
                 fused_feat2, input_lengths2 = self.fusion_module(visual_feat2, audio_feat2, mask2_ds)
                 log_probs2 = self.decoder1(fused_feat2)
                 log_probs2 = F.log_softmax(log_probs2, dim=-1)
