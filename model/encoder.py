@@ -94,7 +94,7 @@ class AudioEncoder(nn.Module):
         hidden_states = output.hidden_states  # tuple of 25 tensors: [B, T, D]
 
         # 중간 레이어 추출 및 평균
-        selected_states = hidden_states[9:14]  # 9-13번째 레이어 선택
+        selected_states = hidden_states[8:15]  # 8-15번째 레이어 선택
         stacked = torch.stack(selected_states, dim=0)  # [L, B, T, D]
         mean_feature = stacked.mean(dim=0)             # [B, T, D] 중간 레이어 output의 평균 
         return output.last_hidden_state, mean_feature  # [B, T', D = 1024]
