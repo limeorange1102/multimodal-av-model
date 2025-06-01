@@ -25,7 +25,7 @@ logging.basicConfig(
 
 def unfreeze_middle_layers(model):
     for name, param in model.named_parameters():
-        if any(f"encoder.layers.{i}." in name for i in range(8, 15)):
+        if any(f"encoder.layers.{i}." in name for i in range(9, 14)):
             param.requires_grad = True
         else:
             param.requires_grad = False
