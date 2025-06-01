@@ -49,10 +49,10 @@ class CrossAttentionFusion(nn.Module):
         # mask == 0, 3인 구간 무시 (즉, 화자가 말하지 않는 구간 무시)
         key_padding_mask = (mask == 0) | (mask == 3) if mask is not None else None # [B, T]
 
-        # visual attends to audio
-        v2a, _ = self.cross_attn_visual(query=v, key=a, value=a, key_padding_mask=key_padding_mask)
+        # audio attends to visual
+        a2v, _ = self.cross_attn_audio(query=a, key=v, value=v, key_padding_mask=key_padding_mask)
 
-        fused = self.fusion_proj(v2a)           # [B, T, D]
+        fused = self.fusion_proj(a2v)           # [B, T, D]
         fused_seq, _ = self.temporal_model(fused)  # [B, T, 2*D]
         return fused_seq
 
