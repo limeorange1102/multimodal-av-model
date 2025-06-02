@@ -31,7 +31,12 @@ class MultimodalTrainer:
             list(self.decoder1.parameters()) 
         )
 
-        self.optimizer = torch.optim.Adam(self.parameters, lr=learning_rate)
+        self.optimizer = torch.optim.Adam([
+            {"params": self.visual_encoder.parameters(), "lr": learning_rate},
+            {"params": self.audio_encoder.parameters(), "lr": 2e-5},
+            {"params": self.fusion_module.parameters(), "lr": learning_rate},
+            {"params": self.decoder1.parameters(), "lr": learning_rate}
+        ])
         self.scaler = GradScaler()  # For mixed precision training
 
     def crop_or_pad_feat(self, feat, target_len):

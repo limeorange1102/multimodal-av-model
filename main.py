@@ -125,7 +125,6 @@ def main():
         fusion_module=fusion,
         decoder1=decoder1,
         tokenizer=tokenizer,
-        learning_rate=3e-4,
         device=device
     )
 
