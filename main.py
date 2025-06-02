@@ -57,10 +57,10 @@ def save_checkpoint(epoch, trainer, path):
 def load_checkpoint(trainer, path):
     checkpoint = torch.load(path, map_location=trainer.device)
     trainer.visual_encoder.load_state_dict(checkpoint['visual_encoder'])
-    trainer.audio_encoder.load_state_dict(checkpoint['audio_encoder'])
+    #trainer.audio_encoder.load_state_dict(checkpoint['audio_encoder'])
     trainer.fusion_module.load_state_dict(checkpoint['fusion'])
     trainer.decoder1.load_state_dict(checkpoint['decoder1'])
-    trainer.optimizer.load_state_dict(checkpoint['optimizer'])
+    #trainer.optimizer.load_state_dict(checkpoint['optimizer'])
     return checkpoint['epoch'] + 1
 
 def main():
